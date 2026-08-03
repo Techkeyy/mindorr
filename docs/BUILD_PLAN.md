@@ -37,10 +37,10 @@ polish, never the trust primitive.
 
 | Phase | Dates | Ships | Proof | Status |
 | --- | --- | --- | --- | --- |
-| **P0** Spine | Aug 1–2 | Scaffold + tee-node/tee-proxy, named cloudflared tunnel, register on live `FlareTeeManager 0x1a9C…18aE` | TEE reaches PRODUCTION; hello-world round-trips | ⏳ |
-| **P1** Sealed wallet | Aug 3–5 | In-enclave key (UPDATE_KEY) + gated signing | A Coston2 tx lands whose key never left the TEE | 🔨 core guard done |
+| **P0** Spine | Aug 1–2 | Scaffold + tee-node/tee-proxy, named cloudflared tunnel, register on live `FlareTeeManager 0x1a9C…18aE` | TEE reaches PRODUCTION; hello-world round-trips | ⏳ needs funded key + tunnel |
+| **P1** Sealed wallet | Aug 3–5 | In-enclave key (UPDATE_KEY) + gated signing | A Coston2 tx lands whose key never left the TEE | ✅ signer + guard wired, tested off-chain |
 | **P2** FXRP in | Aug 5–7 | FDC `Payment` attestation → mint FXRP to the managed wallet | Real deposit proof mints FXRP | ⏳ |
-| **P3** Put to work | Aug 7–10 | In-enclave policy engine + one lending vault; FTSO rebalance trigger | Agent deposits then rebalances on its own | 🔨 policy engine done |
+| **P3** Put to work | Aug 7–10 | In-enclave policy engine + one lending vault; FTSO rebalance trigger | Agent deposits then rebalances on its own | ✅ engine + guard done; vault wiring pending |
 | **P4** The chat | Aug 10–12 | Next.js chat, intent→policy, withdrawal w/ sign-off | "Put my XRP to work, low risk" → funds working | ⏳ |
 | **P5** Prove it | Aug 12–13 | Attestation/verify page; "malicious instruction bounces" demo | Positions invisible on-chain; rug attempt blocked live | 🔨 bounce cases unit-tested |
 | **P6** Ship | Aug 13–14 | 3-min video, README + addresses, "new vs integrated" writeup, roadmap | Submitted on DoraHacks | ⏳ |
@@ -50,10 +50,17 @@ Legend: ✅ done · 🔨 in progress · ⏳ not started.
 ## Done so far
 
 - Monorepo scaffolded on Flare's real `fce-extension-scaffold` (TypeScript path).
-- **Trust core** ([`policy.ts`](../extension/typescript/src/app/policy.ts)) implemented:
-  policy + destination allowlist guard, autonomy boundary, concentration + health caps.
-- **68/68 tests green** (43 scaffold conformance + 14 Mindorr policy + 11 base) via
-  `npm test`, including the malicious-instruction-bounces cases. No chain required.
+- **Trust core** ([`policy.ts`](../extension/typescript/src/app/policy.ts)): policy +
+  destination allowlist guard, autonomy boundary, concentration + health caps.
+- **Enclave signer wired (P1)** — [`wallet.ts`](../extension/typescript/src/app/wallet.ts)
+  (in-enclave key hold + gated signing, mirrors `fce-sign`),
+  [`codec.ts`](../extension/typescript/src/app/codec.ts) (payload decode + canonical
+  action digest), and [`handlers.ts`](../extension/typescript/src/app/handlers.ts) for
+  `WALLET/UPDATE_KEY` + `VAULT/{SET_POLICY,ALLOCATE,REBALANCE,WITHDRAW}`. Every
+  fund-moving op runs decode → evaluate → **sign only if allowed**.
+- **63/63 tests green** + `tsc` clean, including the full evaluate-then-sign path and the
+  malicious-instruction-bounces cases (allocate to non-allowlisted vault, withdraw to a
+  foreign address, unsigned withdraw). No chain required.
 - Coston2 addresses pinned; RUNBOOK with the live-deployment gotchas.
 
 ## If we fall behind — cut list

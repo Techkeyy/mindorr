@@ -1,129 +1,162 @@
 /**
- * ★ MAIN CUSTOMIZATION POINT: your extension's handlers.
+ * ★ Mindorr handlers — where the guard meets the signer.
  *
- * Mirrors go/internal/extension/extension.go. Each handler follows the same
- * 4-step pattern: decode, validate, execute, respond.
+ * Each fund-moving action follows the same rule: decode → evaluate against the
+ * owner's policy → **sign only if allowed**. A refused action returns status 0
+ * with the refusal code in the log and produces no signature. This is the
+ * "malicious instruction bounces" guarantee, live.
  *
- * Handler contract:
- *   (originalMessageHex) => [dataHexOrNull, status, errorOrNull]
- *   status 0 = error, 1 = success. See docs/extension-contract.md §4.6.
- *
- * The framework serializes handler calls, so plain module-level state is safe.
+ * Handler contract: (originalMessageHex) => [dataHexOrNull, status, errorOrNull],
+ * status 0 = error/refused, 1 = success. See docs/extension-contract.md §4.6.
+ * The framework serializes handler calls, so module-level state is safe.
  */
 
 import { bytesToHex, hexToBytes } from "../base/encoding.js";
 import type { Framework, HandlerResult } from "../base/types.js";
 
-import { decodeSayGoodbye } from "./abi.js";
+import { actionDigest, parsePolicy, parseVaultIntent } from "./codec.js";
 import {
-  OP_COMMAND_SAY_GOODBYE,
-  OP_COMMAND_SAY_HELLO,
-  OP_TYPE_GREETING,
+  OP_COMMAND_ALLOCATE,
+  OP_COMMAND_REBALANCE,
+  OP_COMMAND_SET_POLICY,
+  OP_COMMAND_UPDATE_KEY,
+  OP_COMMAND_WITHDRAW,
+  OP_TYPE_VAULT,
+  OP_TYPE_WALLET,
 } from "./config.js";
+import { evaluateIntent, type Intent, type IntentKind, type Policy } from "./policy.js";
+import { ManagedWallet } from "./wallet.js";
 
-// --- Extension state ---------------------------------------------------------
-// Serialized by the framework; no locking needed here.
-let greetingCount = 0;
-let lastGreeting = "";
-let farewellCount = 0;
-let lastFarewell = "";
+// --- Extension state (serialized by the framework) --------------------------
+const wallet = new ManagedWallet();
+let policy: Policy | null = null;
+let actionsSigned = 0;
+let actionsRefused = 0;
 
-/** Reset all state. Used by tests; not part of the wire contract. */
 export function resetState(): void {
-  greetingCount = 0;
-  lastGreeting = "";
-  farewellCount = 0;
-  lastFarewell = "";
+  wallet.clear();
+  policy = null;
+  actionsSigned = 0;
+  actionsRefused = 0;
 }
 
-/** Wire handlers to (opType, opCommand) pairs. */
 export function register(framework: Framework): void {
-  framework.handle(OP_TYPE_GREETING, OP_COMMAND_SAY_HELLO, handleSayHello);
-  framework.handle(OP_TYPE_GREETING, OP_COMMAND_SAY_GOODBYE, handleSayGoodbye);
+  framework.handle(OP_TYPE_WALLET, OP_COMMAND_UPDATE_KEY, handleUpdateKey);
+  framework.handle(OP_TYPE_VAULT, OP_COMMAND_SET_POLICY, handleSetPolicy);
+  framework.handle(OP_TYPE_VAULT, OP_COMMAND_ALLOCATE, (m) => handleVaultAction("allocate", m));
+  framework.handle(OP_TYPE_VAULT, OP_COMMAND_REBALANCE, (m) => handleVaultAction("rebalance", m));
+  framework.handle(OP_TYPE_VAULT, OP_COMMAND_WITHDRAW, (m) => handleVaultAction("withdraw", m));
 }
 
-/** Snapshot returned by GET /state. Mirrors the Go State struct. */
 export function reportState(): unknown {
   return {
-    greetingCount,
-    lastGreeting,
-    farewellCount,
-    lastFarewell,
+    hasKey: wallet.hasKey(),
+    walletAddress: wallet.address(),
+    hasPolicy: policy !== null,
+    riskLevel: policy?.riskLevel ?? null,
+    allowedVenues: policy?.allowedVenues ?? [],
+    actionsSigned,
+    actionsRefused,
   };
 }
 
-/** GREETING/SAY_HELLO — JSON payload {"name": "..."}. */
-export function handleSayHello(msg: string): HandlerResult {
-  // 1. Decode
+// --- helpers ----------------------------------------------------------------
+
+function decodeJson(msg: string): [unknown, string | null] {
+  let raw: Uint8Array;
+  try {
+    raw = hexToBytes(msg);
+  } catch (e) {
+    return [null, `invalid hex: ${String(e)}`];
+  }
+  try {
+    return [JSON.parse(Buffer.from(raw).toString("utf-8")), null];
+  } catch (e) {
+    return [null, `invalid JSON: ${String(e)}`];
+  }
+}
+
+function okJson(obj: unknown): HandlerResult {
+  return [bytesToHex(Buffer.from(JSON.stringify(obj), "utf-8")), 1, null];
+}
+
+function msgOf(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+// --- handlers ---------------------------------------------------------------
+
+/** WALLET/UPDATE_KEY — deliver the managed key, encrypted to the TEE. */
+export async function handleUpdateKey(msg: string): Promise<HandlerResult> {
   let raw: Uint8Array;
   try {
     raw = hexToBytes(msg);
   } catch (e) {
     return [null, 0, `decoding request: invalid hex: ${String(e)}`];
   }
+  if (raw.length === 0) return [null, 0, "originalMessage is empty"];
 
-  let req: unknown;
   try {
-    req = JSON.parse(Buffer.from(raw).toString("utf-8"));
+    const signPort = process.env.SIGN_PORT ?? "9090";
+    await wallet.loadEncryptedKey(signPort, raw);
   } catch (e) {
-    return [null, 0, `decoding request: ${String(e)}`];
+    return [null, 0, `key update failed: ${msgOf(e)}`];
   }
-
-  if (typeof req !== "object" || req === null || Array.isArray(req)) {
-    return [null, 0, "decoding request: expected a JSON object"];
-  }
-
-  // Match Go's DisallowUnknownFields.
-  const unknown = Object.keys(req).filter((k) => k !== "name").sort();
-  if (unknown.length > 0) {
-    return [null, 0, `decoding request: unknown field "${unknown[0]}"`];
-  }
-
-  // 2. Validate
-  const name = (req as { name?: unknown }).name;
-  if (typeof name !== "string" || name === "") {
-    return [null, 0, "name must not be empty"];
-  }
-
-  // 3. Execute
-  greetingCount++;
-  const greeting = `Hello, ${name}! Welcome to Flare Confidential Compute.`;
-  lastGreeting = greeting;
-
-  // 4. Respond
-  const resp = { greeting, greetingNumber: greetingCount };
-  return [bytesToHex(Buffer.from(JSON.stringify(resp), "utf-8")), 1, null];
+  return okJson({ walletAddress: wallet.address() });
 }
 
-/** GREETING/SAY_GOODBYE — ABI-encoded (string name, string reason). */
-export function handleSayGoodbye(msg: string): HandlerResult {
-  // 1. Decode
-  let hex: string;
+/** VAULT/SET_POLICY — set the owner's policy (allowlist, caps, return address). */
+export function handleSetPolicy(msg: string): HandlerResult {
+  const [obj, err] = decodeJson(msg);
+  if (err) return [null, 0, `decoding request: ${err}`];
+
+  let p: Policy;
   try {
-    // Normalize through hexToBytes so malformed input fails here, not in viem.
-    hex = bytesToHex(hexToBytes(msg));
+    p = parsePolicy(obj);
   } catch (e) {
-    return [null, 0, `decoding request: invalid hex: ${String(e)}`];
+    return [null, 0, `invalid policy: ${msgOf(e)}`];
   }
+  policy = p;
+  return okJson({ ok: true, riskLevel: p.riskLevel, allowedVenues: p.allowedVenues.length });
+}
 
-  let decoded: { name: string; reason: string };
+/** VAULT/{ALLOCATE,REBALANCE,WITHDRAW} — evaluate, then sign only if allowed. */
+export async function handleVaultAction(kind: IntentKind, msg: string): Promise<HandlerResult> {
+  if (policy === null) return [null, 0, "no policy set"];
+  if (!wallet.hasKey()) return [null, 0, "no managed key loaded"];
+
+  const [obj, err] = decodeJson(msg);
+  if (err) return [null, 0, `decoding request: ${err}`];
+
+  let intent: Intent;
   try {
-    decoded = decodeSayGoodbye(hex as `0x${string}`);
+    intent = parseVaultIntent(kind, obj);
   } catch (e) {
-    return [null, 0, `decoding request: ${e instanceof Error ? e.message : String(e)}`];
+    return [null, 0, `invalid ${kind}: ${msgOf(e)}`];
   }
 
-  // 2. Validate
-  if (!decoded.name) {
-    return [null, 0, "name must not be empty"];
+  const decision = evaluateIntent(policy, intent);
+  if (!decision.allow) {
+    actionsRefused++;
+    return [null, 0, `refused ${decision.code}: ${decision.reason}`];
   }
 
-  // 3. Execute
-  farewellCount++;
-  const farewell = `Goodbye, ${decoded.name}! Reason: ${decoded.reason}`;
-  lastFarewell = farewell;
+  const digest = actionDigest(intent);
+  let signature: string;
+  try {
+    signature = await wallet.signDigest(digest);
+  } catch (e) {
+    return [null, 0, `signing failed: ${msgOf(e)}`];
+  }
 
-  // 4. Respond
-  const resp = { farewell, farewellNumber: farewellCount };
-  return [bytesToHex(Buffer.from(JSON.stringify(resp), "utf-8")), 1, null];
+  actionsSigned++;
+  return okJson({
+    signer: wallet.address(),
+    kind: intent.kind,
+    asset: intent.asset,
+    amount: intent.amount.toString(),
+    destination: intent.to ?? intent.venue,
+    digest,
+    signature,
+  });
 }

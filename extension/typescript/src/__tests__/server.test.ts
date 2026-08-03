@@ -1,22 +1,24 @@
 /** Server routing and wire format — docs/extension-contract.md §2, §4. */
 
-import { encodeAbiParameters } from "viem";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { VERSION } from "../app/config.js";
 import * as handlers from "../app/handlers.js";
-import { bytesToHex, hexToBytes, stringToBytes32Hex } from "../base/encoding.js";
+import { bytesToHex, stringToBytes32Hex } from "../base/encoding.js";
 import { Server } from "../base/server.js";
 
-const GOODBYE_PARAMS = [
-  {
-    type: "tuple",
-    components: [
-      { name: "name", type: "string" },
-      { name: "reason", type: "string" },
-    ],
-  },
-] as const;
+// A deterministic, dependency-free op (no node, no signing) used to exercise the
+// wire-format contract end to end.
+const VALID_POLICY = {
+  owner: "0x1111111111111111111111111111111111111111",
+  returnAddress: "0x2222222222222222222222222222222222222222",
+  riskLevel: "moderate",
+  asset: "0x3333333333333333333333333333333333333333",
+  allowedVenues: ["0xAAAA000000000000000000000000000000000001"],
+  maxVenueBps: 6000,
+  maxTxAmount: "1000000000000000000000",
+  minHealthFactorBps: 12000,
+};
 
 let srv: Server;
 
@@ -34,8 +36,8 @@ function buildAction(opts: {
   actionId?: string;
 } = {}): string {
   const {
-    opType = "GREETING",
-    opCommand = "SAY_HELLO",
+    opType = "VAULT",
+    opCommand = "SET_POLICY",
     original = Buffer.alloc(0),
     actionId = `0x${"11".repeat(32)}`,
   } = opts;
@@ -66,6 +68,8 @@ function buildAction(opts: {
     signatures: [],
   });
 }
+
+const policyPayload = (): Buffer => Buffer.from(JSON.stringify(VALID_POLICY), "utf-8");
 
 describe("routing", () => {
   it("returns 405 for GET /action", async () => {
@@ -130,25 +134,23 @@ describe("malformed input", () => {
 
 describe("ActionResult wire format", () => {
   it("returns the success shape", async () => {
-    const original = Buffer.from(JSON.stringify({ name: "World" }));
     const [status, body] = await srv.handleRequest(
-      "POST", "/action", buildAction({ original }),
+      "POST", "/action", buildAction({ original: policyPayload() }),
     );
     const r = body as Record<string, unknown>;
 
     expect(status).toBe(200);
     expect(r.status).toBe(1);
     expect(r.log).toBe("ok");
-    expect(r.opType).toBe(stringToBytes32Hex("GREETING"));
-    expect(r.opCommand).toBe(stringToBytes32Hex("SAY_HELLO"));
+    expect(r.opType).toBe(stringToBytes32Hex("VAULT"));
+    expect(r.opCommand).toBe(stringToBytes32Hex("SET_POLICY"));
     expect(String(r.data).startsWith("0x")).toBe(true);
   });
 
   it("sends version as a plain string, not bytes32", async () => {
     // Contract §4.4: tee-node declares `Version string`. The sign repo's
     // Python/TS ports hex-encode this and are wrong; this test pins it.
-    const original = Buffer.from(JSON.stringify({ name: "World" }));
-    const [, body] = await srv.handleRequest("POST", "/action", buildAction({ original }));
+    const [, body] = await srv.handleRequest("POST", "/action", buildAction({ original: policyPayload() }));
     const r = body as Record<string, unknown>;
 
     expect(r.version).toBe("0.1.0");
@@ -156,9 +158,9 @@ describe("ActionResult wire format", () => {
   });
 
   it("reports handler failure as HTTP 200 with status 0", async () => {
-    const original = Buffer.from(JSON.stringify({ name: "" }));
+    // An empty/invalid policy payload is refused by the handler.
     const [status, body] = await srv.handleRequest(
-      "POST", "/action", buildAction({ original }),
+      "POST", "/action", buildAction({ original: Buffer.from("{}") }),
     );
     const r = body as Record<string, unknown>;
 
@@ -171,10 +173,8 @@ describe("ActionResult wire format", () => {
 
   it("always emits every field", async () => {
     // tee-node's ActionResult has no omitempty tags, so every field appears on
-    // the wire regardless of value. Verified against Go by the conformance
-    // fixtures in testdata/conformance/.
-    const original = Buffer.from(JSON.stringify({ name: "W" }));
-    const [, body] = await srv.handleRequest("POST", "/action", buildAction({ original }));
+    // the wire regardless of value.
+    const [, body] = await srv.handleRequest("POST", "/action", buildAction({ original: policyPayload() }));
     const r = body as Record<string, unknown>;
 
     expect(Object.keys(r).sort()).toEqual([
@@ -186,30 +186,13 @@ describe("ActionResult wire format", () => {
 
   it("echoes id and submissionTag", async () => {
     const actionId = `0x${"ab".repeat(32)}`;
-    const original = Buffer.from(JSON.stringify({ name: "W" }));
     const [, body] = await srv.handleRequest(
-      "POST", "/action", buildAction({ original, actionId }),
+      "POST", "/action", buildAction({ original: policyPayload(), actionId }),
     );
     const r = body as Record<string, unknown>;
 
     expect(r.id).toBe(actionId);
     expect(r.submissionTag).toBe("submit");
-  });
-
-  it("handles the SAY_GOODBYE ABI path", async () => {
-    const original = Buffer.from(
-      hexToBytes(encodeAbiParameters(GOODBYE_PARAMS, [{ name: "World", reason: "done" }])),
-    );
-    const [, body] = await srv.handleRequest(
-      "POST", "/action", buildAction({ opCommand: "SAY_GOODBYE", original }),
-    );
-    const r = body as Record<string, unknown>;
-
-    expect(r.status).toBe(1);
-    expect(JSON.parse(Buffer.from(hexToBytes(r.data as string)).toString("utf-8"))).toEqual({
-      farewell: "Goodbye, World! Reason: done",
-      farewellNumber: 1,
-    });
   });
 });
 
@@ -225,13 +208,12 @@ describe("state wire format", () => {
   });
 
   it("reflects handler effects", async () => {
-    const original = Buffer.from(JSON.stringify({ name: "World" }));
-    await srv.handleRequest("POST", "/action", buildAction({ original }));
+    await srv.handleRequest("POST", "/action", buildAction({ original: policyPayload() }));
     const [, body] = await srv.handleRequest("GET", "/state", "");
     const state = (body as { state: Record<string, unknown> }).state;
 
-    expect(state.greetingCount).toBe(1);
-    expect(String(state.lastGreeting).startsWith("Hello, World!")).toBe(true);
+    expect(state.hasPolicy).toBe(true);
+    expect(state.riskLevel).toBe("moderate");
   });
 });
 
@@ -239,14 +221,13 @@ describe("serialization", () => {
   it("does not wedge the queue when a handler throws", async () => {
     // A rejected handler must not block subsequent requests (contract §5).
     const boom = new Server(0, 0, VERSION, (f) => {
-      f.handle("GREETING", "SAY_HELLO", () => {
+      f.handle("VAULT", "SET_POLICY", () => {
         throw new Error("boom");
       });
     }, () => ({ ok: true }));
 
-    const original = Buffer.from(JSON.stringify({ name: "W" }));
     await expect(
-      boom.handleRequest("POST", "/action", buildAction({ original })),
+      boom.handleRequest("POST", "/action", buildAction({ original: policyPayload() })),
     ).rejects.toThrow("boom");
 
     // The queue must still be usable.

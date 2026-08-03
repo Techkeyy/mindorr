@@ -1,13 +1,21 @@
 /**
- * ★ Configuration: version and operation identifiers.
+ * ★ Mindorr configuration: version and operation identifiers.
  *
- * Mirrors go/internal/config/config.go. The op-type and op-command strings MUST
- * match the bytes32 constants in contracts/InstructionSender.sol exactly, or
- * actions fall through to "unsupported op type".
+ * The op-type / op-command strings MUST match the bytes32 constants in the
+ * instruction-sending contract exactly, or actions fall through to
+ * "unsupported op type". See docs/ARCHITECTURE.md for the op table.
  */
 
 export const VERSION = "0.1.0";
 
-export const OP_TYPE_GREETING = "GREETING";
-export const OP_COMMAND_SAY_HELLO = "SAY_HELLO";
-export const OP_COMMAND_SAY_GOODBYE = "SAY_GOODBYE";
+// Managed wallet lifecycle.
+export const OP_TYPE_WALLET = "WALLET";
+export const OP_COMMAND_UPDATE_KEY = "UPDATE_KEY";
+
+// Vault operations. SET_POLICY and WITHDRAW are owner-signed (enforced on-chain);
+// ALLOCATE and REBALANCE are autonomous within policy.
+export const OP_TYPE_VAULT = "VAULT";
+export const OP_COMMAND_SET_POLICY = "SET_POLICY";
+export const OP_COMMAND_ALLOCATE = "ALLOCATE";
+export const OP_COMMAND_REBALANCE = "REBALANCE";
+export const OP_COMMAND_WITHDRAW = "WITHDRAW";
