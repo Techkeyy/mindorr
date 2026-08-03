@@ -1,0 +1,29 @@
+{
+  "network": "coston2",
+  "note": "Live FCC deployment as of the Flare Summer Signal hackathon. FlareTeeManager here is the REDEPLOYED live one; the old 0x004224fa...5d41F is dead (causes FunctionNotFound / register revert).",
+  "fcc": {
+    "FlareTeeManager": "0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE",
+    "InstructionsFacet": "0xe0958De99d4C9Fcb960AEd936Ba5964506AA62Ff",
+    "MachineManagerFacet": "0xF40B9a2e70EE96042217F10D94A4B1eDf13096a8",
+    "ExtensionManagerFacet": "0x13ebf34c3Fd436A657cb0f819c59790dF55CE14B",
+    "WalletManagerFacet": "0xcbf21163bC2A47E8a0FF69cC006C94684bC8Dc9b",
+    "WalletKeyManagerFacet": "0x9Aeb4C3959Ba15464241F7b8daf38Ac2Fa1Cca13",
+    "OwnerAllowlistFacet": "0xDD692398C91c077798aEE6aC5c0e404FbD15c8C9",
+    "VerificationFacet": "0x78203332236cF39A0079746385F33060aCC95778"
+  },
+  "oracles": {
+    "FtsoV2": "0xC4e9c78EA53db782E28f28Fdf80BaF59336B304d",
+    "FtsoTestXrp": "0x22d10E7305Fd39833B4d14d113Bca3602bA1F701",
+    "FtsoTestUsdc": "0x250d28B44287151D2aDa269e715E2b8B639448A3",
+    "FtsoTestUsdt": "0xf32bE3d2bF466916e9a8d9EAA7Ad0179da18268c"
+  },
+  "fdc": {
+    "FdcHub": "0x48aC463d7975828989331F4De43341627b9c5f1D",
+    "FdcVerification": "0x906507E0B64bcD494Db73bd0459d1C667e14B933",
+    "Fdc2Hub": "0x04dd3Ba33aC798d400bEc42A26F82f9812A421dc",
+    "Fdc2Verification": "0xA34Ff9be42b2C7782786270a51d33b1baC0462Cd"
+  },
+  "fassets": {
+    "note": "FXRP / FAssets asset manager addresses on Coston2 to be filled in during Phase 2 (from the FAssets deploy or the dev hub). Not part of the FCC system deployment above."
+  }
+}

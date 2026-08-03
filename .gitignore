@@ -1,0 +1,24 @@
+# deps / build
+node_modules/
+dist/
+build/
+.next/
+out/
+
+# env & secrets — never commit keys, mnemonics, or the hackathon password
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+wallet-*.json
+
+# reference clones (upstream Flare repos, cloned for study only)
+reference/
+
+# tooling
+.DS_Store
+*.log
+coverage/
+.vitest/
