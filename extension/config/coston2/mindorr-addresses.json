@@ -24,6 +24,16 @@
     "Fdc2Verification": "0xA34Ff9be42b2C7782786270a51d33b1baC0462Cd"
   },
   "fassets": {
-    "note": "FXRP / FAssets asset manager addresses on Coston2 to be filled in during Phase 2 (from the FAssets deploy or the dev hub). Not part of the FCC system deployment above."
+    "note": "Discovered read-only via the Flare contract registry (0xaD67...6019) getContractAddressByName + AssetManagerFXRP.fAsset(). Verified live on Coston2.",
+    "FXRP": "0x0b6A3645c240605887a5532109323A3E12273dc7",
+    "FXRP_symbol": "FTestXRP",
+    "FXRP_decimals": 6,
+    "AssetManagerFXRP": "0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA",
+    "AssetManagerController": "0x1C772F700308aF4c13897cc7b9c41EFfB82c50C0",
+    "FlareAssetRegistry": "0xC79E6Dc1817DddcB4206a0aDbb56832F476F4b67",
+    "WNat_collateral": "0xC67DCE33D7A8efA5FfEB961899C73fe01bCe9273"
+  },
+  "registry": {
+    "FlareContractRegistry": "0xaD67FE66660Fb8dFE9d6b1b4240d8650e30F6019"
   }
 }
