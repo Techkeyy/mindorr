@@ -39,7 +39,7 @@ polish, never the trust primitive.
 | --- | --- | --- | --- | --- |
 | **P0** Spine | Aug 1–2 | Scaffold + tee-node/tee-proxy, named cloudflared tunnel, register on live `FlareTeeManager 0x1a9C…18aE` | TEE reaches PRODUCTION; hello-world round-trips | ⏳ needs funded key + tunnel |
 | **P1** Sealed wallet | Aug 3–5 | In-enclave key (UPDATE_KEY) + gated signing | A Coston2 tx lands whose key never left the TEE | ✅ signer + guard wired, tested off-chain |
-| **P2** FXRP in | Aug 5–7 | FDC `Payment` attestation → mint FXRP to the managed wallet | Real deposit proof mints FXRP | ⏳ FAssets addresses discovered on-chain; mint wiring pending |
+| **P2** FXRP in | Aug 5–7 | FDC `Payment` attestation → mint FXRP to the managed wallet | Real deposit proof mints FXRP | ✅ FDC deposit-check built + tested; on-chain `executeMinting` documented |
 | **P3** Put to work | Aug 7–10 | In-enclave policy engine + one lending vault; FTSO rebalance trigger | Agent deposits then rebalances on its own | ✅ engine + guard done; vault wiring pending |
 | **P4** The chat | Aug 10–12 | Next.js chat, intent→policy, withdrawal w/ sign-off | "Put my XRP to work, low risk" → funds working | ✅ built + verified (full flow runs, live FTSO price) |
 | **P5** Prove it | Aug 12–13 | Attestation/verify page; "malicious instruction bounces" demo | Positions invisible on-chain; rug attempt blocked live | 🔨 bounce cases unit-tested |
@@ -70,6 +70,11 @@ Legend: ✅ done · 🔨 in progress · ⏳ not started.
   `0x0b6A3645…73dc7`, `AssetManagerFXRP` `0xc1Ca88b9…bDFA` — now pinned.
 - **Turnkey deploy** ([`DEPLOY.md`](DEPLOY.md) + `scripts/deploy-coston2.sh`): you supply
   a funded key in env; the script deploys + registers. Mindorr never handles keys.
+- **FDC deposit check (P2)** — [`fdc.ts`](../extension/typescript/src/app/fdc.ts) + the
+  `VAULT/CONFIRM_DEPOSIT` handler: builds the FDC `Payment` attestation request and
+  validates the returned proof (right source, recipient, amount, reference) before any
+  FXRP is credited. 14 new tests. The on-chain `AssetManagerFXRP.executeMinting(proof)`
+  step is documented in [`DEPLOY.md`](DEPLOY.md).
 - **Chat app (P4)** in [`app/`](../app) — Next.js. Plain-English brain → intent → the
   same guard the enclave runs → narrated steps. Pulls the **live XRP/USD off Coston2
   FTSO**. Verified end-to-end: onboard → allocate → status (live price) → a malicious

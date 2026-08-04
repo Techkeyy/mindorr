@@ -16,6 +16,7 @@ export const OP_COMMAND_UPDATE_KEY = "UPDATE_KEY";
 // ALLOCATE and REBALANCE are autonomous within policy.
 export const OP_TYPE_VAULT = "VAULT";
 export const OP_COMMAND_SET_POLICY = "SET_POLICY";
+export const OP_COMMAND_CONFIRM_DEPOSIT = "CONFIRM_DEPOSIT";
 export const OP_COMMAND_ALLOCATE = "ALLOCATE";
 export const OP_COMMAND_REBALANCE = "REBALANCE";
 export const OP_COMMAND_WITHDRAW = "WITHDRAW";

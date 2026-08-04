@@ -84,6 +84,41 @@ describe("VAULT/SET_POLICY", () => {
   });
 });
 
+// --- confirm deposit (FDC, P2) ----------------------------------------------
+
+describe("VAULT/CONFIRM_DEPOSIT", () => {
+  const SRC = `0x${"11".repeat(32)}`;
+  const RECIP = `0x${"22".repeat(32)}`;
+  const REF = `0x${"33".repeat(32)}`;
+  const goodDeposit = {
+    proof: { status: 0, sourceId: SRC, receivingAddressHash: RECIP, receivedAmount: "5000000", standardPaymentReference: REF },
+    expected: { sourceId: SRC, receivingAddressHash: RECIP, minAmount: "1000000", reference: REF },
+  };
+
+  it("credits FXRP when the FDC proof checks out", () => {
+    handlers.handleSetPolicy(toMsg(VALID_POLICY));
+    const r = handlers.handleConfirmDeposit(toMsg(goodDeposit));
+    expect(r[1]).toBe(1);
+    const s = handlers.reportState() as { confirmedFxrp: string; depositsConfirmed: number };
+    expect(s.confirmedFxrp).toBe("5000000");
+    expect(s.depositsConfirmed).toBe(1);
+  });
+
+  it("rejects a proof whose payment went to a different address", () => {
+    handlers.handleSetPolicy(toMsg(VALID_POLICY));
+    const bad = { ...goodDeposit, proof: { ...goodDeposit.proof, receivingAddressHash: `0x${"99".repeat(32)}` } };
+    const r = handlers.handleConfirmDeposit(toMsg(bad));
+    expect(r[1]).toBe(0);
+    expect(r[2]).toContain("WRONG_RECIPIENT");
+  });
+
+  it("refuses before a policy is set", () => {
+    const r = handlers.handleConfirmDeposit(toMsg(goodDeposit));
+    expect(r[1]).toBe(0);
+    expect(r[2]).toContain("no policy set");
+  });
+});
+
 // --- guarded vault actions --------------------------------------------------
 
 describe("VAULT/ALLOCATE", () => {

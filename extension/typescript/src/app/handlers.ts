@@ -17,6 +17,7 @@ import type { Framework, HandlerResult } from "../base/types.js";
 import { actionDigest, parsePolicy, parseVaultIntent } from "./codec.js";
 import {
   OP_COMMAND_ALLOCATE,
+  OP_COMMAND_CONFIRM_DEPOSIT,
   OP_COMMAND_REBALANCE,
   OP_COMMAND_SET_POLICY,
   OP_COMMAND_UPDATE_KEY,
@@ -24,6 +25,7 @@ import {
   OP_TYPE_VAULT,
   OP_TYPE_WALLET,
 } from "./config.js";
+import { parseConfirmDeposit, validatePaymentProof } from "./fdc.js";
 import { evaluateIntent, type Intent, type IntentKind, type Policy } from "./policy.js";
 import { ManagedWallet } from "./wallet.js";
 
@@ -32,17 +34,22 @@ const wallet = new ManagedWallet();
 let policy: Policy | null = null;
 let actionsSigned = 0;
 let actionsRefused = 0;
+let confirmedDrops = 0n; // FXRP verified as deposited (drops == FXRP base units, both 6dp)
+let depositsConfirmed = 0;
 
 export function resetState(): void {
   wallet.clear();
   policy = null;
   actionsSigned = 0;
   actionsRefused = 0;
+  confirmedDrops = 0n;
+  depositsConfirmed = 0;
 }
 
 export function register(framework: Framework): void {
   framework.handle(OP_TYPE_WALLET, OP_COMMAND_UPDATE_KEY, handleUpdateKey);
   framework.handle(OP_TYPE_VAULT, OP_COMMAND_SET_POLICY, handleSetPolicy);
+  framework.handle(OP_TYPE_VAULT, OP_COMMAND_CONFIRM_DEPOSIT, handleConfirmDeposit);
   framework.handle(OP_TYPE_VAULT, OP_COMMAND_ALLOCATE, (m) => handleVaultAction("allocate", m));
   framework.handle(OP_TYPE_VAULT, OP_COMMAND_REBALANCE, (m) => handleVaultAction("rebalance", m));
   framework.handle(OP_TYPE_VAULT, OP_COMMAND_WITHDRAW, (m) => handleVaultAction("withdraw", m));
@@ -55,6 +62,8 @@ export function reportState(): unknown {
     hasPolicy: policy !== null,
     riskLevel: policy?.riskLevel ?? null,
     allowedVenues: policy?.allowedVenues ?? [],
+    confirmedFxrp: confirmedDrops.toString(),
+    depositsConfirmed,
     actionsSigned,
     actionsRefused,
   };
@@ -118,6 +127,40 @@ export function handleSetPolicy(msg: string): HandlerResult {
   }
   policy = p;
   return okJson({ ok: true, riskLevel: p.riskLevel, allowedVenues: p.allowedVenues.length });
+}
+
+/**
+ * VAULT/CONFIRM_DEPOSIT — verify, via an FDC Payment proof, that the user's XRP
+ * actually arrived, before any FXRP is credited. The on-chain
+ * AssetManagerFXRP.executeMinting(proof) is a separate tx (docs/DEPLOY.md); this
+ * is the confidential check that gates it.
+ */
+export function handleConfirmDeposit(msg: string): HandlerResult {
+  if (policy === null) return [null, 0, "no policy set"];
+
+  const [obj, err] = decodeJson(msg);
+  if (err) return [null, 0, `decoding request: ${err}`];
+
+  let parsed;
+  try {
+    parsed = parseConfirmDeposit(obj);
+  } catch (e) {
+    return [null, 0, `invalid deposit: ${msgOf(e)}`];
+  }
+
+  const verdict = validatePaymentProof(parsed.proof, parsed.expected);
+  if (!verdict.ok) {
+    return [null, 0, `deposit rejected ${verdict.code}: ${verdict.reason}`];
+  }
+
+  confirmedDrops += parsed.proof.receivedAmount;
+  depositsConfirmed++;
+  return okJson({
+    confirmed: true,
+    receivedFxrp: parsed.proof.receivedAmount.toString(),
+    totalConfirmedFxrp: confirmedDrops.toString(),
+    reference: parsed.proof.standardPaymentReference,
+  });
 }
 
 /** VAULT/{ALLOCATE,REBALANCE,WITHDRAW} — evaluate, then sign only if allowed. */

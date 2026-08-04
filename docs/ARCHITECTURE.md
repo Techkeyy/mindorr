@@ -37,6 +37,7 @@ routed to Mindorr by its `(opType, opCommand)` bytes32 pair, and carries a paylo
 | --- | --- | --- | --- |
 | `WALLET` | `UPDATE_KEY` | n/a (setup) | Deliver the managed wallet's key, encrypted to the TEE. Decrypted via the node, held only in enclave memory. Mirrors `fce-sign`. |
 | `VAULT` | `SET_POLICY` | ❌ owner-signed | Set/replace the owner's `Policy` (risk level, allowlist, return address, caps). |
+| `VAULT` | `CONFIRM_DEPOSIT` | n/a (proof-gated) | Verify, via an FDC `Payment` proof, that the user's XRP actually arrived (right recipient, amount, reference) before FXRP is credited. Gates the on-chain `executeMinting`. |
 | `VAULT` | `ALLOCATE` | ✅ | Deposit FXRP into an **allowlisted** vault, within the concentration cap. |
 | `VAULT` | `REBALANCE` | ✅ | Move between allowlisted vaults while keeping health ≥ the floor. |
 | `VAULT` | `WITHDRAW` | ❌ owner-signed | Redeem and return FXRP **only** to the owner's return address. |

@@ -52,6 +52,29 @@ and the live-deployment gotchas are in [`RUNBOOK.md`](RUNBOOK.md):
 4. `SIMULATED_TEE=true` / `MODE=1` is accepted for judging (RUNBOOK §5).
 5. Confirm PRODUCTION with `check-tee-state` (RUNBOOK §6).
 
+## C. Mint FXRP from an XRP deposit (P2)
+
+The confidential half — verifying the deposit — runs in the enclave
+(`VAULT/CONFIRM_DEPOSIT`, backed by [`fdc.ts`](../extension/typescript/src/app/fdc.ts)).
+The on-chain half is a normal FAssets flow against `AssetManagerFXRP`
+`0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA`:
+
+1. Reserve a mint with an agent (`reserveCollateral`) → get the agent's XRPL
+   address + payment reference.
+2. Pay XRP on the XRPL testnet to that address with the reference.
+3. Request an FDC `Payment` attestation for that XRPL tx; retrieve the proof.
+   The enclave validates it via `CONFIRM_DEPOSIT` before crediting anything.
+4. Submit the proof on-chain:
+
+```bash
+cast send 0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA \
+  "executeMinting((bytes32[],(bytes32,bytes32,uint64,uint64,(bytes32,uint256,uint256),(...))) ,uint256)" \
+  <PROOF> <CRT_ID> --rpc-url "$RPC" --private-key "$DEPLOYER_KEY"
+```
+
+FXRP (`0x0b6A3645…73dc7`, 6 decimals) is minted to the minter. Amounts are in
+drops (1 XRP = 1,000,000), which lines up 1:1 with FXRP's 6 decimals.
+
 ## End-to-end sanity check (the demo)
 
 1. `WALLET/UPDATE_KEY` → enclave holds a key; note the wallet address.
