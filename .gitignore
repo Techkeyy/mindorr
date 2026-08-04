@@ -9,6 +9,9 @@ out/
 cache/
 broadcast/
 
+# ts build info
+*.tsbuildinfo
+
 # env & secrets — never commit keys, mnemonics, or the hackathon password
 .env
 .env.*
