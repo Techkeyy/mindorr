@@ -39,7 +39,7 @@ polish, never the trust primitive.
 | --- | --- | --- | --- | --- |
 | **P0** Spine | Aug 1–2 | Scaffold + tee-node/tee-proxy, named cloudflared tunnel, register on live `FlareTeeManager 0x1a9C…18aE` | TEE reaches PRODUCTION; hello-world round-trips | ⏳ needs funded key + tunnel |
 | **P1** Sealed wallet | Aug 3–5 | In-enclave key (UPDATE_KEY) + gated signing | A Coston2 tx lands whose key never left the TEE | ✅ signer + guard wired, tested off-chain |
-| **P2** FXRP in | Aug 5–7 | FDC `Payment` attestation → mint FXRP to the managed wallet | Real deposit proof mints FXRP | ⏳ |
+| **P2** FXRP in | Aug 5–7 | FDC `Payment` attestation → mint FXRP to the managed wallet | Real deposit proof mints FXRP | ⏳ FAssets addresses discovered on-chain; mint wiring pending |
 | **P3** Put to work | Aug 7–10 | In-enclave policy engine + one lending vault; FTSO rebalance trigger | Agent deposits then rebalances on its own | ✅ engine + guard done; vault wiring pending |
 | **P4** The chat | Aug 10–12 | Next.js chat, intent→policy, withdrawal w/ sign-off | "Put my XRP to work, low risk" → funds working | ⏳ |
 | **P5** Prove it | Aug 12–13 | Attestation/verify page; "malicious instruction bounces" demo | Positions invisible on-chain; rug attempt blocked live | 🔨 bounce cases unit-tested |
@@ -61,6 +61,15 @@ Legend: ✅ done · 🔨 in progress · ⏳ not started.
 - **63/63 tests green** + `tsc` clean, including the full evaluate-then-sign path and the
   malicious-instruction-bounces cases (allocate to non-allowlisted vault, withdraw to a
   foreign address, unsigned withdraw). No chain required.
+- **On-chain verifier** ([`MindorrVault.sol`](../extension/contracts/MindorrVault.sol)):
+  re-enforces the allowlist on-chain, verifies the enclave signature via `ecrecover`
+  against the same digest, releases FXRP only on approval. **6/6 Foundry tests green**
+  (happy paths + unlisted-venue / bad-signer / foreign-withdrawal / replay all revert).
+- **Read-only chain discovery** (no key): confirmed live `FlareTeeManager` bytecode, read
+  XRP/USD off FTSO, and resolved the FAssets stack — FXRP token
+  `0x0b6A3645…73dc7`, `AssetManagerFXRP` `0xc1Ca88b9…bDFA` — now pinned.
+- **Turnkey deploy** ([`DEPLOY.md`](DEPLOY.md) + `scripts/deploy-coston2.sh`): you supply
+  a funded key in env; the script deploys + registers. Mindorr never handles keys.
 - Coston2 addresses pinned; RUNBOOK with the live-deployment gotchas.
 
 ## If we fall behind — cut list

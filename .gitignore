@@ -5,6 +5,10 @@ build/
 .next/
 out/
 
+# foundry
+cache/
+broadcast/
+
 # env & secrets — never commit keys, mnemonics, or the hackathon password
 .env
 .env.*
