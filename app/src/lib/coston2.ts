@@ -10,8 +10,11 @@ const RPC = "https://coston2-api.flare.network/ext/C/rpc";
 const FTSO_TEST_XRP = "0x22d10E7305Fd39833B4d14d113Bca3602bA1F701" as const;
 
 export const TEE_MANAGER = "0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE" as const;
-export const TEE_ID = "0x4A47F54fC5C8f1e6321Ea29c47f5D33EF1d05056" as const;
-export const EXTENSION_ID = 66129n;
+// Current registration (extension 66157). The TEE machine key is re-attested each
+// time the enclave restarts; update this to the latest registered id before a demo.
+// The immutable proof of the real fund movement lives on /verify (execute/mint txs).
+export const TEE_ID = "0xD876437F023e5681d151845C326270327968F2ff" as const;
+export const EXTENSION_ID = 66157n;
 
 const FTSO_ABI = [
   {
