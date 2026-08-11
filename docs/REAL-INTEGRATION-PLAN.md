@@ -105,7 +105,14 @@ we need anyway):
 - [x] **Both mint ABIs verified on the deployed diamond via facetAddress():** executeMinting
   tuple `0x0da5e8e0`→`0xB73dd9C0…`, reserveCollateral `0x275a7bfc`→`0x2a6afDFa…`. viem encodes clean.
 - [ ] **Codespace run:** `npm i` in app/mint → reserve → pay → execute-minting → mint lands in vault.
-- [ ] `ALLOC_AMOUNT=1000000 ./scripts/test.sh` → 1-FXRP sig → `MindorrVault.execute(...)` moves real FXRP.
+- [x] **REAL FUND MOVEMENT COMPLETE (2026-08-11).** Minted 20 FXRP into the vault
+  (executeMinting `0x3ca96a6f…` from XRPL payment `B4E7A8D5…09F6D7`). Enclave signed a 1-FXRP
+  allocation; `MindorrVault.execute()` tx **`0xf690cca5ccef66f66bf896ab42a74bf77624859b2fd86026090ee258b145dac7`**
+  moved 1 real FXRP vault→venue, status 1. Receipt has the FXRP Transfer (1e6) + ActionExecuted
+  (signer = managed wallet `0x71562b71…`). Full loop real on live Coston2.
+
+## ✅ ENTIRE REAL INTEGRATION COMPLETE. Confidential agent → on-chain verify → real FXRP moved.
+## Remaining is presentation: live-app wiring (optional) + demo video + DoraHacks submission.
 
 FDC flow (grounded): verifier `https://fdc-verifiers-testnet.flare.network/verifier/xrp/Payment/prepareRequest`
 (x-api-key `00000000-…-000000000000`), DA layer `https://ctn2-data-availability.flare.network/api/v1/fdc/proof-by-request-round`,
