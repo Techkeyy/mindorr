@@ -85,9 +85,15 @@ we need anyway):
   `0x2e5f496fa626519d56eb7844743172301c7d34d8390df5cef127ca6b820ce6d02564795bfb958b7b941b6e6d4e939d6a65d8775162d4a0f8e05f8bdfe40c486c1c`.
 - [x] Added `previewExecute` view to `MindorrVault` (recover + allowlist, no transfer).
   Compiles; forge tests still 6/6.
-- [ ] Deploy `MindorrVault` + `registerAccount(managedWallet, owner, FXRP)` + `setVenue`;
-  `cast call previewExecute(...)` with the captured sig → `(true, 0x71562b71…, "ok")`. That
-  proves the enclave sig clears the on-chain verifier. Full `execute()` (transfer) after the mint.
+- [x] **PROVEN ON-CHAIN (2026-08-11).** `MindorrVault` deployed at
+  `0x64CA30780Cf7ecA918C667bebbabB5F833Ee58fc`; `registerAccount` + `setVenue` done.
+  `cast call previewExecute(...)` with the real enclave sig →
+  **`true / 0x71562b71999873DB5b286dF957af199Ec94617F7 / "ok"`**. The enclave signature
+  clears the on-chain verifier: recovered == managed wallet, allowlist enforced.
+- [ ] Full `execute()` with real FXRP transfer — needs the mint (next).
+
+## Phase 0/1 STATUS: COMPLETE. The confidential-compute core is real, both off-chain
+## (Go ecrecover) and on-chain (MindorrVault.previewExecute). Gate cleared — build the mint.
 
 **Live coordinates after the redeploy (volatile — regenerate on each rebuild):**
 InstructionSender `0xf2170a0EBD84Bdf18F1b973A67d95F590F7Cc0f4`, extension **66157**,
