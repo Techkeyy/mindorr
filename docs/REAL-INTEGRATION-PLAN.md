@@ -69,8 +69,26 @@ we need anyway):
   `SendUpdateKey`/`SendAllocate`/`SendWithdraw` (DRY helper). *Pending Codespace `go build`.*
 - [x] `tools/cmd/run-test`: Phase-1 driver — `VAULT/SET_POLICY` round-trip proof
   (no key). *Pending Codespace run.*
-- [ ] **Codespace: regenerate bindings → `go build` → redeploy (pre/post-build) →
-  `./scripts/test.sh` → SET_POLICY returns status 1.** ← the cheapest real signal, next.
+- [x] **Codespace GREEN (2026-08-11):** `go build` clean; redeployed; `./scripts/test.sh`
+  → `SET_POLICY response: riskLevel=conservative allowedVenues=1` → **Phase 1 round-trip
+  GREEN**. Real tx `0x5b46a8a2…`, instruction `0x6fb15764…`. The on-chain→enclave→result
+  path works for Mindorr ops.
+- [x] `run-test` extended to the full Phase-1 proof: SET_POLICY → UPDATE_KEY
+  (ECIES to the TEE pubkey) → ALLOCATE (capture + local ecrecover of the real enclave
+  sig, digest recomputed independently) → malicious ALLOCATE (expect refusal). Payloads
+  verified against the real `policy.ts` guard (allowed passes, attacker → DEST_NOT_ALLOWED).
+  *Pending Codespace run — Go only, no re-registration needed.*
+- [ ] Add `previewExecute` view to `MindorrVault` (recover + allowlist, no transfer) so the
+  enclave sig can be proven ON-CHAIN without needing FXRP yet.
+- [ ] Deploy `MindorrVault` + `registerAccount` + `setVenue`; prove enclave sig on-chain via
+  `previewExecute`. Full `execute()` (with transfer) comes after the mint.
+
+**Live coordinates after the redeploy (volatile — regenerate on each rebuild):**
+InstructionSender `0xf2170a0EBD84Bdf18F1b973A67d95F590F7Cc0f4`, extension **66157**,
+TEE `0xbbCeDc053C31adCE49D8DbC57640bD1a9A13528c` (PRODUCTION). NOTE: the app's
+`coston2.ts` still hardcodes the OLD TEE `0x4A47…` — update it (and /verify) only after
+the FINAL registration, since start-services regenerates the enclave key (new TEE ID) each
+rebuild. project-edge claim-audit must catch this before submission.
 - [ ] `WALLET/UPDATE_KEY`: encrypt a secp256k1 key to the TEE, deliver, confirm
   `walletAddress` in `/state`.
 - [ ] `VAULT/ALLOCATE` → capture the real enclave signature + digest.
