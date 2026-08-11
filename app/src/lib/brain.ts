@@ -1,9 +1,9 @@
 /**
- * The brain — turns a plain-English message into an action.
+ * The brain: turns a plain-English message into an action.
  *
  * Deterministic and offline for a reliable demo; the shape (message → typed
  * action) is exactly where an LLM slots in later. It decides *intent* only and
- * never touches funds — every fund move still goes through the guard.
+ * never touches funds; every fund move still goes through the guard.
  */
 
 import type { RiskLevel } from "./guard";

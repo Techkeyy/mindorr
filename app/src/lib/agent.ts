@@ -1,9 +1,9 @@
 /**
- * The Mindorr agent — the money-manager the chat talks to.
+ * The Mindorr agent: the money-manager the chat talks to.
  *
  * It holds a tiny in-memory portfolio and, for every fund move, runs the same
  * guard the enclave runs (guard.ts) before "signing". Refused actions never move
- * funds — that's the trust story, live in the demo.
+ * funds; that's the trust story, live in the demo.
  *
  * Amounts are XRP units for legibility. The enclave works in FXRP base units.
  */
@@ -87,7 +87,7 @@ export function onboard(state: AgentState, risk: RiskLevel): { steps: Step[]; st
   s.walletAddress = ENCLAVE_WALLET;
   steps.push({
     label: "Created your private wallet",
-    detail: `The signing key was generated inside the TEE — it never leaves. Nobody, including us, can move your funds. Wallet ${short(ENCLAVE_WALLET)}.`,
+    detail: `The signing key was generated inside the TEE and never leaves. Nobody, including us, can move your funds. Wallet ${short(ENCLAVE_WALLET)}.`,
     ok: true,
   });
 
@@ -175,7 +175,7 @@ export function rebalance(state: AgentState): { steps: Step[]; state: AgentState
 
 /**
  * Withdraw. If `to` is omitted it defaults to your return address (allowed). Any
- * other destination is refused by the guard — the "malicious instruction bounces"
+ * other destination is refused by the guard, the "malicious instruction bounces"
  * moment.
  */
 export function withdraw(state: AgentState, to?: string): { steps: Step[]; state: AgentState } {
@@ -197,7 +197,7 @@ export function withdraw(state: AgentState, to?: string): { steps: Step[]; state
     s.refusals += 1;
     steps.push({
       label: "Blocked the withdrawal",
-      detail: `${decision.reason}. Even I can't send your funds there — the allowlist lives inside the enclave, where a compromised brain can't reach it.`,
+      detail: `${decision.reason}. Even I can't send your funds there; the allowlist lives inside the enclave, where a compromised brain can't reach it.`,
       ok: false,
       code: decision.code,
     });

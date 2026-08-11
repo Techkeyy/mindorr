@@ -30,7 +30,7 @@ function statusText(state: AgentState, price: XrpPrice | null): string {
   if (price) {
     lines.push(`**XRP/USD (live from Flare FTSO):** $${price.usd.toFixed(4)} → your position ≈ $${(pv * price.usd).toLocaleString(undefined, { maximumFractionDigits: 0 })}.`);
   }
-  lines.push(`Your balances and strategy stay inside the enclave — none of this is visible on the public chain. Wallet ${short(state.walletAddress!)}.`);
+  lines.push(`Your balances and strategy stay inside the enclave, so none of this is visible on the public chain. Wallet ${short(state.walletAddress!)}.`);
   return lines.join("\n");
 }
 
@@ -56,7 +56,7 @@ export async function POST(request: Request): Promise<Response> {
       const r = onboard(state, action.risk);
       state = r.state;
       steps = r.steps;
-      reply = `Done — your XRP is working across ${state.positions.length} vault${state.positions.length > 1 ? "s" : ""}, blended ~${blendedApy(state)}% APY, all inside the sealed enclave. I never held your keys, and your positions aren't public. Say "status" any time, or "withdraw" to pull out.`;
+      reply = `Done. Your XRP is working across ${state.positions.length} vault${state.positions.length > 1 ? "s" : ""}, blended ~${blendedApy(state)}% APY, all inside the sealed enclave. I never held your keys, and your positions aren't public. Say "status" any time, or "withdraw" to pull out.`;
       break;
     }
     case "status": {
@@ -71,7 +71,7 @@ export async function POST(request: Request): Promise<Response> {
       const r = rebalance(state);
       state = r.state;
       steps = r.steps;
-      reply = "Checked every position against your policy — all within bounds and above the health floor. No moves needed.";
+      reply = "Checked every position against your policy. All within bounds and above the health floor, no moves needed.";
       break;
     }
     case "withdraw": {
@@ -84,8 +84,8 @@ export async function POST(request: Request): Promise<Response> {
       steps = r.steps;
       const blocked = steps.some((s) => !s.ok);
       reply = blocked
-        ? "I refused that. Withdrawals can only ever go to your own return address — that's enforced inside the enclave, so not even a hijacked instruction can redirect your funds."
-        : "All done — everything redeemed back to XRP and returned to your own wallet.";
+        ? "I refused that. Withdrawals can only ever go to your own return address, enforced inside the enclave, so not even a hijacked instruction can redirect your funds."
+        : "All done. Everything redeemed back to XRP and returned to your own wallet.";
       break;
     }
     default: {

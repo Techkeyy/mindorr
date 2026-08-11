@@ -1,5 +1,5 @@
 /**
- * Mindorr guard — demo mirror of extension/typescript/src/app/policy.ts.
+ * Mindorr guard: demo mirror of extension/typescript/src/app/policy.ts.
  *
  * Same rules, same refusal codes; amounts are plain XRP units here (the extension
  * uses FXRP base-unit bigints). This is what makes the chat demo show *real*
