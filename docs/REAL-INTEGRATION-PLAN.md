@@ -78,10 +78,16 @@ we need anyway):
   sig, digest recomputed independently) → malicious ALLOCATE (expect refusal). Payloads
   verified against the real `policy.ts` guard (allowed passes, attacker → DEST_NOT_ALLOWED).
   *Pending Codespace run — Go only, no re-registration needed.*
-- [ ] Add `previewExecute` view to `MindorrVault` (recover + allowlist, no transfer) so the
-  enclave sig can be proven ON-CHAIN without needing FXRP yet.
-- [ ] Deploy `MindorrVault` + `registerAccount` + `setVenue`; prove enclave sig on-chain via
-  `previewExecute`. Full `execute()` (with transfer) comes after the mint.
+- [x] **Phase 1 COMPLETE on live enclave (2026-08-11).** Real txs: SET_POLICY `0x2dba08d3…`,
+  UPDATE_KEY `0xdd7220a3…` (managed wallet `0x71562b71999873DB5b286dF957af199Ec94617F7`),
+  ALLOCATE `0xa7bce239…` (sig recovers to managed wallet ✓), malicious ALLOCATE `0x16a109e3…`
+  (refused `DEST_NOT_ALLOWED` ✓). Captured signature:
+  `0x2e5f496fa626519d56eb7844743172301c7d34d8390df5cef127ca6b820ce6d02564795bfb958b7b941b6e6d4e939d6a65d8775162d4a0f8e05f8bdfe40c486c1c`.
+- [x] Added `previewExecute` view to `MindorrVault` (recover + allowlist, no transfer).
+  Compiles; forge tests still 6/6.
+- [ ] Deploy `MindorrVault` + `registerAccount(managedWallet, owner, FXRP)` + `setVenue`;
+  `cast call previewExecute(...)` with the captured sig → `(true, 0x71562b71…, "ok")`. That
+  proves the enclave sig clears the on-chain verifier. Full `execute()` (transfer) after the mint.
 
 **Live coordinates after the redeploy (volatile — regenerate on each rebuild):**
 InstructionSender `0xf2170a0EBD84Bdf18F1b973A67d95F590F7Cc0f4`, extension **66157**,

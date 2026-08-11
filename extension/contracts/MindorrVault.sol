@@ -118,6 +118,41 @@ contract MindorrVault {
         emit ActionExecuted(owner, kind, asset, amount, dest, a.managedWallet);
     }
 
+    /// @notice Read-only preview of execute()'s verification — destination
+    ///         allowlist + signature recovery — WITHOUT the token transfer or the
+    ///         replay marking. This lets the enclave's signature be proven on-chain
+    ///         before the vault holds any FXRP (the mint comes later). It runs the
+    ///         exact same digest + recover logic execute() does.
+    /// @return ok        true iff the destination is permitted AND the signature
+    ///                   recovers to the registered managed wallet.
+    /// @return recovered the address recovered from the signature.
+    /// @return reason    "ok" or the first failing check.
+    function previewExecute(
+        address owner,
+        uint8 kind,
+        address asset,
+        uint256 amount,
+        address dest,
+        bytes calldata signature
+    ) external view returns (bool ok, address recovered, string memory reason) {
+        Account memory a = accounts[owner];
+        if (!a.exists) return (false, address(0), "no account");
+        if (asset != a.asset) return (false, address(0), "wrong asset");
+
+        if (kind == KIND_ALLOCATE || kind == KIND_REBALANCE) {
+            if (!allowedVenue[owner][dest]) return (false, address(0), "venue not allowed");
+        } else if (kind == KIND_WITHDRAW) {
+            if (dest != a.returnAddress) return (false, address(0), "not return address");
+        } else {
+            return (false, address(0), "bad kind");
+        }
+
+        bytes32 d = actionDigest(kind, asset, amount, dest);
+        recovered = _recover(d, signature);
+        ok = recovered == a.managedWallet;
+        reason = ok ? "ok" : "signer mismatch";
+    }
+
     function _recover(bytes32 hash, bytes calldata sig) internal pure returns (address) {
         if (sig.length != 65) return address(0);
         bytes32 r;
