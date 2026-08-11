@@ -40,16 +40,44 @@ recovers a test key's signature and reverts on a foreign dest. The only unproven
 link is whether the **live enclave's** signature over `actionDigest` matches
 byte-for-byte what `ecrecover` expects.
 
-First real move once the enclave is back — a single live proof, **before** the mint
-or app wiring:
+**Reframe after reading the code (2026-08-11):** the sign→execute *logic* is already
+proven to high confidence by inspection + existing tests, so this core risk is largely
+retired:
+- `forge test` (6/6) proves `execute()` recovers a **viem-signed** digest and enforces
+  the allowlist / return-address.
+- `wallet.ts` shows the enclave signs with the **identical** viem primitive
+  (`privateKeyToAccount(k).sign({ hash })`) over the **identical** `actionDigest`
+  (`codec.ts`). Same bytes in, same signature format out — so the "does the live
+  enclave's sig match what ecrecover expects" risk is essentially zero.
 
-- [ ] Enclave signs one known `actionDigest` (via `POST /action`).
-- [ ] Deploy `MindorrVault`; `registerAccount(managedWallet, returnAddress, FXRP)`.
-- [ ] `execute()` with that signature **succeeds**; emits `ActionExecuted`, signer == managedWallet.
-- [ ] Tampered / foreign-dest `execute()` **reverts** (`VenueNotAllowed` / `NotReturnAddress` / `BadSigner`).
+So the genuine remaining risk is **not** the crypto — it is the **on-chain round-trip**:
+send a Mindorr op instruction → InstructionSender → enclave executes → retrieve the
+result. No Mindorr driver exists yet (`run-test` only sends the scaffold's
+`SAY_HELLO`/`SAY_GOODBYE`; those now fail since `handlers.ts` only registers WALLET/VAULT
+ops). The `WALLET/UPDATE_KEY` step needs the signing key **encrypted to the TEE pubkey**
+(node `/decrypt`), whose encrypt-and-deliver pattern lives in the **fce-sign reference**
+(`reference/fce-sign/go/tools/{cmd/run-test,pkg/utils/instructions.go}`).
 
-Gate: **do not build the mint or the app wiring until the above is green.** Hour one,
-not day three.
+Revised Phase 1 proof (belt-and-suspenders live confirmation + the app→enclave wiring
+we need anyway):
+
+- [x] sign→execute logic proven in isolation (forge 6/6 + shared viem primitive).
+- [x] `InstructionSender.sol` rewritten for Mindorr ops (`sendUpdateKey`/`sendSetPolicy`/
+  `sendAllocate`/`sendWithdraw`/…). Kept the scaffold contract name + `helloworld` pkg so
+  binding-gen/deploy/register tooling is untouched. **Compiles ✓** (verified in the ABI).
+- [x] `tools/pkg/utils/instructions.go`: replaced hello senders with `SendSetPolicy`/
+  `SendUpdateKey`/`SendAllocate`/`SendWithdraw` (DRY helper). *Pending Codespace `go build`.*
+- [x] `tools/cmd/run-test`: Phase-1 driver — `VAULT/SET_POLICY` round-trip proof
+  (no key). *Pending Codespace run.*
+- [ ] **Codespace: regenerate bindings → `go build` → redeploy (pre/post-build) →
+  `./scripts/test.sh` → SET_POLICY returns status 1.** ← the cheapest real signal, next.
+- [ ] `WALLET/UPDATE_KEY`: encrypt a secp256k1 key to the TEE, deliver, confirm
+  `walletAddress` in `/state`.
+- [ ] `VAULT/ALLOCATE` → capture the real enclave signature + digest.
+- [ ] Deploy `MindorrVault`; `registerAccount(managedWallet, returnAddress, FXRP)` + `setVenue`.
+- [ ] Live `execute()` with the real enclave sig **succeeds**; tampered dest **reverts**.
+
+Gate: do not build the FAssets mint until the live round-trip + execute is green.
 
 ## Phase 6 — doctor-check the mint before coding it
 
@@ -57,11 +85,45 @@ Already earned its keep: a `getAgentInfo` ABI guess returned garbage — the exa
 "shape differs from what you coded against" trap. Before writing
 `reserveCollateral` / `executeMinting`:
 
-- [ ] Read-only `doctor` against the live `AssetManagerFXRP` (`0xc1Ca88…bDFA`):
-  `getSettings` (lot size, fee), `getAvailableAgentsDetailedList`, collateral
-  reservation fee. Confirm every struct shape against reality.
 - [x] Confirmed 4 FXRP minting agents are live on Coston2 (mint is feasible).
+- [x] `AssetManagerFXRP` is an **EIP-2535 diamond** proxy; impl `0xac15ba84…45a6`.
+  `getabi` returns the diamond ABI, not the minting fns — those come from Flare's
+  `IAssetManager` user interface, exposed via the diamond fallback.
+- [x] Pulled the **canonical** minting ABI from `flare-foundation/fassets` (below).
+- [ ] Verify those signatures against the **deployed** diamond (versions differ —
+  `main`'s `reserveCollateral` has 4 params, older ones add `_minterUnderlyingAddresses`).
+  Read-only doctor: `getSettings`, `collateralReservationFee(1)`,
+  `getAvailableAgentsDetailedList(0,10)` return sane data; diamond loupe confirms the
+  `reserveCollateral`/`executeMinting` selectors exist.
 - [ ] No assumed ABIs anywhere in the mint module.
+
+### Canonical mint ABI (from fassets `main` — VERIFY against deployed before use)
+
+```solidity
+// AssetManagerFXRP = 0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA (diamond)
+function reserveCollateral(address _agentVault, uint256 _lots, uint256 _maxMintingFeeBIPS,
+    address payable _executor) external payable returns (uint256 _collateralReservationId);
+function executeMinting(IPayment.Proof _payment, uint256 _collateralReservationId) external;
+function collateralReservationFee(uint256 _lots) external view returns (uint256 _feeNATWei);
+function getAvailableAgentsDetailedList(uint256 _start, uint256 _end) external view
+    returns (AvailableAgentInfo.Data[] _agents, uint256 _totalLength);
+function getSettings() external view returns (AssetManagerSettings.Data);
+// settings fields we use: lotSizeAMG, assetMintingDecimals, assetMintingGranularityUBA,
+//                         collateralReservationFeeBIPS, mintingCapAMG
+
+// The mint's heart — carries the agent's XRPL address + payment reference:
+event CollateralReserved(address indexed agentVault, address indexed minter,
+    uint256 indexed collateralReservationId, uint256 valueUBA, uint256 feeUBA,
+    uint256 firstUnderlyingBlock, uint256 lastUnderlyingBlock, uint256 lastUnderlyingTimestamp,
+    string paymentAddress, bytes32 paymentReference, address executor, uint256 executorFeeNatWei);
+event MintingExecuted(address indexed agentVault, uint256 indexed collateralReservationId,
+    uint256 mintedAmountUBA, uint256 agentFeeUBA, uint256 poolFeeUBA);
+```
+
+Mint flow: `reserveCollateral` (pay fee in NAT) → read `CollateralReserved` for
+`paymentAddress` + `paymentReference` + `valueUBA` → **pay that XRP on XRPL testnet with
+the reference** → FDC `Payment` attestation for the XRPL tx → `executeMinting(proof, crtId)`
+→ FXRP minted to the minter.
 
 ## Phase 4/5 — make the environment stop fighting us
 

@@ -5,23 +5,39 @@ pragma solidity ^0.8.27;
 import { ITeeExtensionRegistry } from "./interfaces/ITeeExtensionRegistry.sol";
 import { ITeeMachineRegistry } from "./interfaces/ITeeMachineRegistry.sol";
 
-/// @title HelloWorldInstructionSender
-/// @author Flare Foundation
-/// @notice Hello World example — on-chain entry point for sending instructions to the TEE.
+/// @title HelloWorldInstructionSender (Mindorr instruction sender)
+/// @author Flare Foundation / Mindorr
+/// @notice On-chain entry point that forwards Mindorr's confidential-vault ops to
+///         the TEE: WALLET/UPDATE_KEY and VAULT/{SET_POLICY,CONFIRM_DEPOSIT,ALLOCATE,
+///         REBALANCE,WITHDRAW}. Each method sets the (opType, opCommand) the enclave
+///         handlers route on (see typescript/src/app/config.ts) and forwards the raw
+///         message bytes; the framework hex-encodes them for the handler.
+///
+///         The contract keeps its scaffold name so the existing binding-generation
+///         (generate-bindings.sh: CONTRACT_NAME=HelloWorldInstructionSender, pkg
+///         `helloworld`) and deploy/register tooling work unchanged.
 ///
 /// DO NOT MODIFY: constructor, setExtensionId(), _getExtensionId()
 contract HelloWorldInstructionSender {
-    /// @notice Operation type for greeting actions (SAY_HELLO, SAY_GOODBYE).
+    // --- Mindorr op identifiers. bytes32(string) must match config.ts exactly, or
+    //     actions fall through to "unsupported op type" in the enclave.
     // forge-lint: disable-next-line(unsafe-typecast)
-    bytes32 public constant OP_TYPE_GREETING = bytes32("GREETING");
+    bytes32 public constant OP_TYPE_WALLET = bytes32("WALLET");
+    // forge-lint: disable-next-line(unsafe-typecast)
+    bytes32 public constant OP_COMMAND_UPDATE_KEY = bytes32("UPDATE_KEY");
 
-    /// @notice Command for the SAY_HELLO action.
     // forge-lint: disable-next-line(unsafe-typecast)
-    bytes32 public constant OP_COMMAND_SAY_HELLO = bytes32("SAY_HELLO");
-
-    /// @notice Command for the SAY_GOODBYE action.
+    bytes32 public constant OP_TYPE_VAULT = bytes32("VAULT");
     // forge-lint: disable-next-line(unsafe-typecast)
-    bytes32 public constant OP_COMMAND_SAY_GOODBYE = bytes32("SAY_GOODBYE");
+    bytes32 public constant OP_COMMAND_SET_POLICY = bytes32("SET_POLICY");
+    // forge-lint: disable-next-line(unsafe-typecast)
+    bytes32 public constant OP_COMMAND_CONFIRM_DEPOSIT = bytes32("CONFIRM_DEPOSIT");
+    // forge-lint: disable-next-line(unsafe-typecast)
+    bytes32 public constant OP_COMMAND_ALLOCATE = bytes32("ALLOCATE");
+    // forge-lint: disable-next-line(unsafe-typecast)
+    bytes32 public constant OP_COMMAND_REBALANCE = bytes32("REBALANCE");
+    // forge-lint: disable-next-line(unsafe-typecast)
+    bytes32 public constant OP_COMMAND_WITHDRAW = bytes32("WITHDRAW");
 
     /// @notice Reference to the TEE extension registry contract.
     ITeeExtensionRegistry public immutable TEE_EXTENSION_REGISTRY;
@@ -33,12 +49,6 @@ contract HelloWorldInstructionSender {
     uint256 private constant FIRST_PUBLIC_EXTENSION_ID = 0x10000; // 65536
 
     uint256 private _extensionId;
-
-    /// @notice Payload for the SAY_GOODBYE instruction.
-    struct SayGoodbyeMessage {
-        string name;
-        string reason;
-    }
 
     /// @notice Initializes the contract with registry addresses.
     /// @param _teeExtensionRegistry Address of the TEE extension registry.
@@ -70,39 +80,51 @@ contract HelloWorldInstructionSender {
         revert("Extension ID not found.");
     }
 
-    /// @notice Sends a SAY_HELLO instruction to the TEE.
-    /// @param _message JSON-encoded payload (e.g. {"name": "Alice"}).
-    function sendSayHello(bytes calldata _message) external payable {
-        address[] memory teeIds = TEE_MACHINE_REGISTRY.getRandomTeeIds(_getExtensionId(), 1);
-        address[] memory cosigners = new address[](0);
-
-        ITeeExtensionRegistry.TeeInstructionParams memory params = ITeeExtensionRegistry.TeeInstructionParams({
-            opType: OP_TYPE_GREETING,
-            opCommand: OP_COMMAND_SAY_HELLO,
-            message: _message,
-            cosigners: cosigners,
-            cosignersThreshold: 0,
-            claimBackAddress: msg.sender
-        });
-
-
-        TEE_EXTENSION_REGISTRY.sendInstructions{value: msg.value}(
-            teeIds,
-            params
-        );
+    /// @notice WALLET/UPDATE_KEY — deliver the signing key, encrypted to the TEE.
+    /// @param _encryptedKey secp256k1 key ciphertext (encrypted to the TEE pubkey).
+    function sendUpdateKey(bytes calldata _encryptedKey) external payable {
+        _send(OP_TYPE_WALLET, OP_COMMAND_UPDATE_KEY, _encryptedKey);
     }
 
-    /// @notice Sends a SAY_GOODBYE instruction to the TEE.
-    /// @param _name The name of the person to say goodbye to.
-    /// @param _reason The reason for saying goodbye.
-    function sendSayGoodbye(string calldata _name, string calldata _reason) external payable {
+    /// @notice VAULT/SET_POLICY — set the owner's policy (allowlist, caps, return address).
+    /// @param _policy JSON-encoded policy payload.
+    function sendSetPolicy(bytes calldata _policy) external payable {
+        _send(OP_TYPE_VAULT, OP_COMMAND_SET_POLICY, _policy);
+    }
+
+    /// @notice VAULT/CONFIRM_DEPOSIT — verify an XRP deposit via an FDC proof.
+    /// @param _deposit JSON-encoded {proof, expected} payload.
+    function sendConfirmDeposit(bytes calldata _deposit) external payable {
+        _send(OP_TYPE_VAULT, OP_COMMAND_CONFIRM_DEPOSIT, _deposit);
+    }
+
+    /// @notice VAULT/ALLOCATE — allocate to an allowlisted venue (autonomous within policy).
+    /// @param _intent JSON-encoded allocate intent.
+    function sendAllocate(bytes calldata _intent) external payable {
+        _send(OP_TYPE_VAULT, OP_COMMAND_ALLOCATE, _intent);
+    }
+
+    /// @notice VAULT/REBALANCE — reaffirm the split is within policy (autonomous).
+    /// @param _intent JSON-encoded rebalance intent.
+    function sendRebalance(bytes calldata _intent) external payable {
+        _send(OP_TYPE_VAULT, OP_COMMAND_REBALANCE, _intent);
+    }
+
+    /// @notice VAULT/WITHDRAW — withdraw to the owner's return address only.
+    /// @param _intent JSON-encoded withdraw intent.
+    function sendWithdraw(bytes calldata _intent) external payable {
+        _send(OP_TYPE_VAULT, OP_COMMAND_WITHDRAW, _intent);
+    }
+
+    /// @notice Route one instruction to a random TEE machine for this extension.
+    function _send(bytes32 _opType, bytes32 _opCommand, bytes calldata _message) internal {
         address[] memory teeIds = TEE_MACHINE_REGISTRY.getRandomTeeIds(_getExtensionId(), 1);
         address[] memory cosigners = new address[](0);
 
         ITeeExtensionRegistry.TeeInstructionParams memory params = ITeeExtensionRegistry.TeeInstructionParams({
-            opType: OP_TYPE_GREETING,
-            opCommand: OP_COMMAND_SAY_GOODBYE,
-            message: abi.encode(SayGoodbyeMessage({name: _name, reason: _reason})),
+            opType: _opType,
+            opCommand: _opCommand,
+            message: _message,
             cosigners: cosigners,
             cosignersThreshold: 0,
             claimBackAddress: msg.sender
