@@ -23,21 +23,23 @@ FXRP="${FXRP:-0x0b6A3645c240605887a5532109323A3E12273dc7}"   # verified Coston2 
 cd "$(dirname "$0")/../extension"
 
 echo "==> Deploying MindorrVault to Coston2 ($RPC)"
+# --chain flare-coston2 is explicit because Foundry otherwise reads CHAIN=coston2
+# from extension/.env as an (invalid) --chain value and refuses to run.
 ADDR=$(forge create contracts/MindorrVault.sol:MindorrVault \
-  --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" --broadcast \
+  --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" --broadcast --chain flare-coston2 \
   --json | node -e 'process.stdin.on("data",d=>{try{console.log(JSON.parse(d).deployedTo)}catch(e){process.stdout.write(d)}})')
 echo "    MindorrVault deployed at: $ADDR"
 
 echo "==> Registering account (managedWallet=$MANAGED_WALLET, returnAddr=$RETURN_ADDR, asset=$FXRP)"
 cast send "$ADDR" "registerAccount(address,address,address)" \
   "$MANAGED_WALLET" "$RETURN_ADDR" "$FXRP" \
-  --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" >/dev/null
+  --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" --chain flare-coston2 >/dev/null
 echo "    account registered"
 
 if [ -n "${VENUE:-}" ]; then
   echo "==> Allowlisting venue $VENUE"
   cast send "$ADDR" "setVenue(address,bool)" "$VENUE" true \
-    --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" >/dev/null
+    --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" --chain flare-coston2 >/dev/null
   echo "    venue allowlisted"
 fi
 
