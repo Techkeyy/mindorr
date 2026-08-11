@@ -90,7 +90,16 @@ we need anyway):
   `cast call previewExecute(...)` with the real enclave sig →
   **`true / 0x71562b71999873DB5b286dF957af199Ec94617F7 / "ok"`**. The enclave signature
   clears the on-chain verifier: recovered == managed wallet, allowlist enforced.
-- [ ] Full `execute()` with real FXRP transfer — needs the mint (next).
+- [ ] Full `execute()` with real FXRP transfer — needs the mint (in progress).
+
+### Mint build (app/mint/)
+- [x] Doctor: `lotSize`=1e7 (**1 lot = 10 FXRP**), `collateralReservationFee(1)`≈1.68 C2FLR,
+  `reserveCollateral(address,uint256,uint256,address)` 4-arg sig confirmed on the deployed diamond.
+- [x] `mint/reserve.mjs` (viem): reserve 1 lot → decode CollateralReserved → save
+  `reservation.json` (agent XRPL address, payment reference, XRP amount). Read path verified live.
+- [ ] `mint/pay.mjs` (xrpl.js): send the XRP to the agent with the payment reference.
+- [ ] `mint/execute-minting.mjs`: FDC Payment attestation → `executeMinting` → FXRP to minter → transfer to vault.
+- [ ] Real `MindorrVault.execute()` moves the minted FXRP to the venue → real tx hash.
 
 ## Phase 0/1 STATUS: COMPLETE. The confidential-compute core is real, both off-chain
 ## (Go ecrecover) and on-chain (MindorrVault.previewExecute). Gate cleared — build the mint.
