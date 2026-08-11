@@ -25,7 +25,8 @@ function loadReservation() {
 }
 
 function requireSecret() {
-  const s = process.env.XRPL_SECRET;
+  // Trim stray whitespace/newlines from a pasted secret before base58 decoding.
+  const s = (process.env.XRPL_SECRET ?? "").trim();
   if (!s || !s.startsWith("s")) {
     console.error("Set XRPL_SECRET to your funded XRPL testnet secret (starts with 's').");
     process.exit(1);
