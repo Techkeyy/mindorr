@@ -92,6 +92,52 @@ export default async function VerifyPage() {
 
         <section className="v-card">
           <div className="v-card-head">
+            <span className="v-eyebrow">Real on-chain fund movement</span>
+            <span className="v-badge ok">PROVEN</span>
+          </div>
+          <p className="v-lede">
+            The full loop is live on Coston2: real FXRP, minted from a real XRPL payment through
+            Flare&apos;s Data Connector, moved only because the enclave signed a guard-approved action
+            and this vault verified the signature on-chain. Permanent receipts:
+          </p>
+          <dl className="v-grid">
+            <div>
+              <dt>execute() · 1 FXRP moved, released by the enclave sig</dt>
+              <dd className="mono">
+                <a href={`${EXPLORER}/tx/0xf690cca5ccef66f66bf896ab42a74bf77624859b2fd86026090ee258b145dac7`} target="_blank" rel="noopener noreferrer">
+                  0xf690cca5…45dac7
+                </a>
+              </dd>
+            </div>
+            <div>
+              <dt>FXRP minted · FAssets + FDC</dt>
+              <dd className="mono">
+                <a href={`${EXPLORER}/tx/0x3ca96a6fdeb503f36ee17b0c656bb4283100535628710aac1255ec4400f2adec`} target="_blank" rel="noopener noreferrer">
+                  0x3ca96a6f…f2adec
+                </a>
+              </dd>
+            </div>
+            <div>
+              <dt>Malicious allocation refused · DEST_NOT_ALLOWED</dt>
+              <dd className="mono">
+                <a href={`${EXPLORER}/tx/0x861c6745702eeb7a3538c76f1ecad7626eb95a0517feb3afa3bc4c8df1d5f270`} target="_blank" rel="noopener noreferrer">
+                  0x861c6745…5f270
+                </a>
+              </dd>
+            </div>
+            <div>
+              <dt>MindorrVault · on-chain verifier</dt>
+              <dd className="mono">
+                <a href={`${EXPLORER}/address/0x64CA30780Cf7ecA918C667bebbabB5F833Ee58fc`} target="_blank" rel="noopener noreferrer">
+                  0x64CA30…Ee58fc
+                </a>
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="v-card">
+          <div className="v-card-head">
             <span className="v-eyebrow">Trusted Execution Environment</span>
             <span className={`v-badge ${isProduction ? "ok" : "warn"}`}>
               {tee?.status ?? "OFFLINE"}
