@@ -1,39 +1,34 @@
 /**
- * The Mindorr agent: the money-manager the chat talks to.
+ * The Mindorr agent: narrates the flow using the REAL Coston2 deployment, not
+ * placeholder data. Every address here is the live deployment (the enclave
+ * signer, the owner/return address, the allowlisted venue, FXRP), the deposit
+ * is seeded from the live vault balance, and the steps link the real on-chain
+ * receipts. For every fund move it runs the same guard the enclave runs
+ * (guard.ts) before "signing" — refused actions never move funds.
  *
- * It holds a tiny in-memory portfolio and, for every fund move, runs the same
- * guard the enclave runs (guard.ts) before "signing". Refused actions never move
- * funds; that's the trust story, live in the demo.
- *
- * Amounts are XRP units for legibility. The enclave works in FXRP base units.
+ * There is no live yield venue on testnet, so no APY is claimed; the allocation
+ * is the real guarded transfer to the allowlisted address, verified on-chain by
+ * MindorrVault.
  */
 
 import { evaluateIntent, type Policy, type RiskLevel, type Venue } from "./guard";
+import { FXRP, MANAGED_WALLET, OWNER_ADDRESS, ALLOWED_VENUE, PROOF_TX } from "./coston2";
 
-const addr = (prefix: string): string => `0x${prefix}${"0".repeat(40 - prefix.length)}`;
+export const FXRP_ADDRESS = FXRP;
+export const ENCLAVE_WALLET = MANAGED_WALLET; // the real in-enclave signing wallet
+export const RETURN_ADDRESS = OWNER_ADDRESS; // the real owner / only withdrawal target
 
-export const FXRP = "0x0b6A3645c240605887a5532109323A3E12273dc7"; // verified Coston2 FXRP
-export const ENCLAVE_WALLET = addr("e0c1a5e0"); // simulated in-enclave wallet address
-export const RETURN_ADDRESS = addr("abcdef01"); // "your own wallet"
-
-const VAULT_A: Venue = { address: addr("a11a0001"), name: "Morpho FXRP/USDC (blue-chip)", apy: 4.2 };
-const VAULT_B: Venue = { address: addr("b00b0002"), name: "Mystic Core FXRP", apy: 6.9 };
-const VAULT_C: Venue = { address: addr("c0c00003"), name: "Kinetic High-Yield FXRP", apy: 11.4 };
-
-const CATALOG: Record<RiskLevel, Venue[]> = {
-  conservative: [VAULT_A],
-  moderate: [VAULT_A, VAULT_B],
-  growth: [VAULT_A, VAULT_B, VAULT_C],
-};
+// The single on-chain allowlisted venue — the address funds actually move to via
+// the guarded execute(). No live yield on testnet, so apy stays 0 (unused).
+const VENUE: Venue = { address: ALLOWED_VENUE, name: "your allowlisted venue", apy: 0 };
 
 const RISK_PARAMS: Record<RiskLevel, { maxVenueBps: number; minHealthFactorBps: number }> = {
   conservative: { maxVenueBps: 10_000, minHealthFactorBps: 15_000 },
-  moderate: { maxVenueBps: 6_000, minHealthFactorBps: 13_000 },
-  growth: { maxVenueBps: 5_000, minHealthFactorBps: 12_000 },
+  moderate: { maxVenueBps: 10_000, minHealthFactorBps: 13_000 },
+  growth: { maxVenueBps: 10_000, minHealthFactorBps: 12_000 },
 };
 
-const DEMO_DEPOSIT = 5_000; // XRP the demo "detects" as idle
-const MAX_TX = 1_000_000;
+const MAX_TX = 1_000_000_000; // per-tx cap in whole FXRP (illustrative bound)
 
 export interface Position extends Venue {
   amount: number;
@@ -43,7 +38,7 @@ export interface AgentState {
   onboarded: boolean;
   walletAddress?: string;
   policy?: Policy;
-  idle: number; // FXRP minted, not yet allocated
+  idle: number;
   positions: Position[];
   refusals: number;
 }
@@ -72,36 +67,40 @@ function makePolicy(risk: RiskLevel): Policy {
     returnAddress: RETURN_ADDRESS,
     riskLevel: risk,
     asset: FXRP,
-    allowedVenues: CATALOG[risk],
+    allowedVenues: [VENUE],
     maxVenueBps: p.maxVenueBps,
     maxTxAmount: MAX_TX,
     minHealthFactorBps: p.minHealthFactorBps,
   };
 }
 
-/** Onboard: create the enclave wallet, set policy, mint FXRP, allocate. */
-export function onboard(state: AgentState, risk: RiskLevel): { steps: Step[]; state: AgentState } {
+/**
+ * Onboard: create the enclave wallet, set policy, reflect the FXRP already
+ * minted into the vault, then allocate it to the allowlisted venue.
+ * `depositFxrp` is the live MindorrVault FXRP balance.
+ */
+export function onboard(state: AgentState, risk: RiskLevel, depositFxrp: number): { steps: Step[]; state: AgentState } {
   const s: AgentState = { ...state, positions: [...state.positions] };
   const steps: Step[] = [];
 
   s.walletAddress = ENCLAVE_WALLET;
   steps.push({
     label: "Created your private wallet",
-    detail: `The signing key was generated inside the TEE and never leaves. Nobody, including us, can move your funds. Wallet ${short(ENCLAVE_WALLET)}.`,
+    detail: `The signing key lives inside the TEE and never leaves. This is the real enclave signer ${short(ENCLAVE_WALLET)} — the address MindorrVault verifies every move against.`,
     ok: true,
   });
 
   s.policy = makePolicy(risk);
   steps.push({
     label: "Set your policy",
-    detail: `${cap(risk)} · ${s.policy.allowedVenues.length} approved vault${s.policy.allowedVenues.length > 1 ? "s" : ""} · withdrawals only ever to your own address.`,
+    detail: `${cap(risk)} · 1 allowlisted venue · withdrawals only ever to your own address ${short(RETURN_ADDRESS)}.`,
     ok: true,
   });
 
-  s.idle = round2(s.idle + DEMO_DEPOSIT);
+  s.idle = round2(s.idle + depositFxrp);
   steps.push({
     label: "Minted FXRP",
-    detail: `Detected ${DEMO_DEPOSIT.toLocaleString()} idle XRP and wrapped it into FXRP (deposit proven via FDC). Held in your private wallet.`,
+    detail: `${depositFxrp.toLocaleString()} FXRP held in the enclave vault, minted from a real XRP deposit proven via Flare's Data Connector (tx ${short(PROOF_TX.mint)}).`,
     ok: true,
   });
 
@@ -110,38 +109,30 @@ export function onboard(state: AgentState, risk: RiskLevel): { steps: Step[]; st
   return { steps, state: s };
 }
 
-/** Spread idle FXRP evenly across the allowed vaults, guard-checking each move. */
+/** Allocate idle FXRP to the allowlisted venue, guard-checked before signing. */
 function allocateIdle(s: AgentState, steps: Step[]): void {
   if (!s.policy || s.idle <= 0) return;
-  const venues = s.policy.allowedVenues;
-  const portfolio = portfolioValue(s);
-  const per = round2(s.idle / venues.length);
-
-  for (const v of venues) {
-    if (s.idle <= 0) break;
-    const amount = Math.min(per, s.idle);
-    const existing = s.positions.find((p) => p.address === v.address);
-    const decision = evaluateIntent(s.policy, {
-      kind: "allocate",
-      asset: FXRP,
-      amount,
-      venue: v.address,
-      portfolioValue: portfolio,
-      venueBalance: existing?.amount ?? 0,
-    });
-    if (!decision.allow) {
-      steps.push({ label: `Skipped ${v.name}`, detail: decision.reason, ok: false, code: decision.code });
-      continue;
-    }
-    if (existing) existing.amount = round2(existing.amount + amount);
-    else s.positions.push({ ...v, amount });
-    s.idle = round2(s.idle - amount);
-    steps.push({
-      label: `Allocated to ${v.name}`,
-      detail: `${amount.toLocaleString()} FXRP → ~${v.apy}% APY · guard: OK, signed in-enclave.`,
-      ok: true,
-    });
+  const v = VENUE;
+  const amount = s.idle;
+  const decision = evaluateIntent(s.policy, {
+    kind: "allocate",
+    asset: FXRP,
+    amount,
+    venue: v.address,
+    portfolioValue: portfolioValue(s),
+    venueBalance: 0,
+  });
+  if (!decision.allow) {
+    steps.push({ label: `Skipped ${v.name}`, detail: decision.reason, ok: false, code: decision.code });
+    return;
   }
+  s.positions.push({ ...v, amount });
+  s.idle = 0;
+  steps.push({
+    label: "Allocated to your allowlisted venue",
+    detail: `${amount.toLocaleString()} FXRP routed to ${short(v.address)} — guard-checked, then released by MindorrVault only after it verified the enclave signature on-chain (real execute tx ${short(PROOF_TX.execute)}).`,
+    ok: true,
+  });
 }
 
 /** Rebalance: reaffirm the split is within policy (guard-checked, health-aware). */
@@ -162,10 +153,8 @@ export function rebalance(state: AgentState): { steps: Step[]; state: AgentState
       projectedHealthFactorBps: s.policy.minHealthFactorBps + 3_000,
     });
     steps.push({
-      label: `${p.name}`,
-      detail: decision.allow
-        ? `${p.amount.toLocaleString()} FXRP · within policy, health above floor.`
-        : decision.reason,
+      label: p.name,
+      detail: decision.allow ? `${p.amount.toLocaleString()} FXRP · within policy.` : decision.reason,
       ok: decision.allow,
       code: decision.allow ? undefined : decision.code,
     });
@@ -209,7 +198,7 @@ export function withdraw(state: AgentState, to?: string): { steps: Step[]; state
   }
   steps.push({
     label: "Returned to your wallet",
-    detail: `${amount.toLocaleString()} FXRP redeemed to XRP and sent to your address ${short(dest)} · guard: OK.`,
+    detail: `${amount.toLocaleString()} FXRP redeemed to your address ${short(dest)} · guard: OK.`,
     ok: true,
   });
   s.positions = [];

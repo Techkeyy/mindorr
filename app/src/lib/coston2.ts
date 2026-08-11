@@ -16,6 +16,46 @@ export const TEE_MANAGER = "0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE" as const
 export const TEE_ID = "0xD876437F023e5681d151845C326270327968F2ff" as const;
 export const EXTENSION_ID = 66157n;
 
+// --- Real deployed Mindorr addresses (Coston2) ------------------------------
+export const MINDORR_VAULT = "0x64CA30780Cf7ecA918C667bebbabB5F833Ee58fc" as const;
+export const INSTRUCTION_SENDER = "0xf2170a0EBD84Bdf18F1b973A67d95F590F7Cc0f4" as const;
+export const MANAGED_WALLET = "0x71562b71999873DB5b286dF957af199Ec94617F7" as const; // enclave signer
+export const OWNER_ADDRESS = "0x16Cbdc4974754F915aDd3Fb7240A7eF9699c8700" as const; // return address
+export const ALLOWED_VENUE = "0xa11a000100000000000000000000000000000000" as const; // allowlisted destination
+export const FXRP = "0x0b6A3645c240605887a5532109323A3E12273dc7" as const; // FAssets FXRP, 6dp
+
+// Permanent on-chain receipts of the real loop (linked from the chat + /verify).
+export const PROOF_TX = {
+  execute: "0xf690cca5ccef66f66bf896ab42a74bf77624859b2fd86026090ee258b145dac7",
+  mint: "0x3ca96a6fdeb503f36ee17b0c656bb4283100535628710aac1255ec4400f2adec",
+  refused: "0x861c6745702eeb7a3538c76f1ecad7626eb95a0517feb3afa3bc4c8df1d5f270",
+} as const;
+
+const ERC20_ABI = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "who", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+/** Live FXRP balance held by the MindorrVault, in whole FXRP. null if RPC is down. */
+export async function getVaultFxrp(): Promise<number | null> {
+  try {
+    const bal = (await client().readContract({
+      address: FXRP,
+      abi: ERC20_ABI,
+      functionName: "balanceOf",
+      args: [MINDORR_VAULT],
+    })) as bigint;
+    return Number(bal) / 1_000_000; // FXRP has 6 decimals
+  } catch {
+    return null;
+  }
+}
+
 const FTSO_ABI = [
   {
     type: "function",

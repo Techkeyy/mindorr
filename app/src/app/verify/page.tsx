@@ -1,6 +1,6 @@
-import { getTeeMachine, TEE_MANAGER, TEE_ID } from "@/lib/coston2";
+import { getTeeMachine, TEE_MANAGER, TEE_ID, FXRP, ALLOWED_VENUE } from "@/lib/coston2";
 import { evaluateIntent, type Policy } from "@/lib/guard";
-import { FXRP, RETURN_ADDRESS, ENCLAVE_WALLET } from "@/lib/agent";
+import { RETURN_ADDRESS, ENCLAVE_WALLET } from "@/lib/agent";
 import Link from "next/link";
 
 export const revalidate = 30;
@@ -8,19 +8,18 @@ export const revalidate = 30;
 const short = (a: string) => `${a.slice(0, 8)}…${a.slice(-6)}`;
 
 const EXPLORER = "https://coston2-explorer.flare.network";
+// The real attacker address the on-chain refusal was tested against (refused tx 0x861c6745…).
 const ATTACKER = "0xdead00000000000000000000000000000000beef";
 
+// The real policy: FXRP, the single allowlisted venue, withdrawals only to the owner.
 const DEMO_POLICY: Policy = {
   returnAddress: RETURN_ADDRESS,
-  riskLevel: "moderate",
+  riskLevel: "conservative",
   asset: FXRP,
-  allowedVenues: [
-    { address: "0xa11a00010000000000000000000000000000000000", name: "Morpho FXRP/USDC", apy: 4.2 },
-    { address: "0xb00b00020000000000000000000000000000000000", name: "Mystic Core FXRP", apy: 6.9 },
-  ],
-  maxVenueBps: 6_000,
+  allowedVenues: [{ address: ALLOWED_VENUE, name: "your allowlisted venue", apy: 0 }],
+  maxVenueBps: 10_000,
   maxTxAmount: 1_000_000,
-  minHealthFactorBps: 13_000,
+  minHealthFactorBps: 15_000,
 };
 
 const RUG_ATTEMPTS = [
