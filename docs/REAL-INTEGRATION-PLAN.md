@@ -97,9 +97,19 @@ we need anyway):
   `reserveCollateral(address,uint256,uint256,address)` 4-arg sig confirmed on the deployed diamond.
 - [x] `mint/reserve.mjs` (viem): reserve 1 lot → decode CollateralReserved → save
   `reservation.json` (agent XRPL address, payment reference, XRP amount). Read path verified live.
-- [ ] `mint/pay.mjs` (xrpl.js): send the XRP to the agent with the payment reference.
-- [ ] `mint/execute-minting.mjs`: FDC Payment attestation → `executeMinting` → FXRP to minter → transfer to vault.
-- [ ] Real `MindorrVault.execute()` moves the minted FXRP to the venue → real tx hash.
+- [x] `mint/pay.mjs` (xrpl.js): send the XRP to the agent, `paymentReference` in a memo.
+- [x] `mint/execute-minting.mjs`: FDC Payment attestation (verifier prepareRequest →
+  FdcHub requestAttestation → DA-layer proof-by-request-round → `executeMinting`) → transfer
+  FXRP to the vault. FDC endpoints/keys grounded from Flare docs; response tuple coerced to bigints.
+- [x] `run-test` takes `ALLOC_AMOUNT` (sign for the minted 1 FXRP).
+- [x] **Both mint ABIs verified on the deployed diamond via facetAddress():** executeMinting
+  tuple `0x0da5e8e0`→`0xB73dd9C0…`, reserveCollateral `0x275a7bfc`→`0x2a6afDFa…`. viem encodes clean.
+- [ ] **Codespace run:** `npm i` in app/mint → reserve → pay → execute-minting → mint lands in vault.
+- [ ] `ALLOC_AMOUNT=1000000 ./scripts/test.sh` → 1-FXRP sig → `MindorrVault.execute(...)` moves real FXRP.
+
+FDC flow (grounded): verifier `https://fdc-verifiers-testnet.flare.network/verifier/xrp/Payment/prepareRequest`
+(x-api-key `00000000-…-000000000000`), DA layer `https://ctn2-data-availability.flare.network/api/v1/fdc/proof-by-request-round`,
+FdcHub `0x48aC463d…`, fee cfg `0x191a1282…`, round = (ts-1658430000)/90. sourceId `testXRP`, attestationType `Payment`.
 
 ## Phase 0/1 STATUS: COMPLETE. The confidential-compute core is real, both off-chain
 ## (Go ecrecover) and on-chain (MindorrVault.previewExecute). Gate cleared — build the mint.

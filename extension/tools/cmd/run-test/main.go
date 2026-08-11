@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"flag"
 	"math/big"
+	"os"
 	"strings"
 	"time"
 
@@ -48,9 +49,6 @@ const fxrp = "0x0b6A3645c240605887a5532109323A3E12273dc7"
 // A venue we allowlist, and an attacker address the guard must reject.
 const allowedVenue = "0xa11a000100000000000000000000000000000000"
 const attackerVenue = "0xdead00000000000000000000000000000000beef"
-
-// Allocation amount in FXRP base units (5,000 FXRP at 6dp).
-const allocAmount = "5000000000"
 
 // Fixed delivered key, so the managed wallet address is deterministic across
 // runs (the vault's registerAccount can pin it). In production the enclave
@@ -110,6 +108,13 @@ func main() {
 		fccutils.FatalWithCause(err)
 	}
 	owner := crypto.PubkeyToAddress(s.Prv.PublicKey)
+
+	// Allocation amount in FXRP base units (6dp). Override with ALLOC_AMOUNT to
+	// match the minted balance for the real execute() (e.g. 1000000 = 1 FXRP).
+	allocAmount := os.Getenv("ALLOC_AMOUNT")
+	if allocAmount == "" {
+		allocAmount = "5000000000"
+	}
 
 	// --- Bind the extension id (idempotent) ----------------------------------
 	logger.Infof("Setting extension ID on instruction sender...")

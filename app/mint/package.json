@@ -1,0 +1,10 @@
+{
+  "name": "mindorr-mint",
+  "private": true,
+  "type": "module",
+  "description": "One-off FXRP mint scripts (reserve -> pay on XRPL -> FDC attest -> executeMinting -> fund vault -> execute).",
+  "dependencies": {
+    "viem": "2.21.55",
+    "xrpl": "4.1.0"
+  }
+}

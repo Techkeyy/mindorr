@@ -47,10 +47,52 @@ export const assetManagerAbi = [
     type: "function",
     name: "executeMinting",
     stateMutability: "nonpayable",
-    // IPayment.Proof is (bytes32[] merkleProof, Payment.Response data). We pass it
-    // as a pre-built tuple from the FDC step; typed loosely here and encoded there.
     inputs: [
-      { name: "_payment", type: "bytes" },
+      {
+        name: "_payment",
+        type: "tuple",
+        components: [
+          { name: "merkleProof", type: "bytes32[]" },
+          {
+            name: "data",
+            type: "tuple",
+            components: [
+              { name: "attestationType", type: "bytes32" },
+              { name: "sourceId", type: "bytes32" },
+              { name: "votingRound", type: "uint64" },
+              { name: "lowestUsedTimestamp", type: "uint64" },
+              {
+                name: "requestBody",
+                type: "tuple",
+                components: [
+                  { name: "transactionId", type: "bytes32" },
+                  { name: "inUtxo", type: "uint256" },
+                  { name: "utxo", type: "uint256" },
+                ],
+              },
+              {
+                name: "responseBody",
+                type: "tuple",
+                components: [
+                  { name: "blockNumber", type: "uint64" },
+                  { name: "blockTimestamp", type: "uint64" },
+                  { name: "sourceAddressHash", type: "bytes32" },
+                  { name: "sourceAddressesRoot", type: "bytes32" },
+                  { name: "receivingAddressHash", type: "bytes32" },
+                  { name: "intendedReceivingAddressHash", type: "bytes32" },
+                  { name: "spentAmount", type: "int256" },
+                  { name: "intendedSpentAmount", type: "int256" },
+                  { name: "receivedAmount", type: "int256" },
+                  { name: "intendedReceivedAmount", type: "int256" },
+                  { name: "standardPaymentReference", type: "bytes32" },
+                  { name: "oneToOne", type: "bool" },
+                  { name: "status", type: "uint8" },
+                ],
+              },
+            ],
+          },
+        ],
+      },
       { name: "_collateralReservationId", type: "uint256" },
     ],
     outputs: [],
@@ -84,3 +126,54 @@ export const coston2 = {
 
 export const ASSET_MANAGER_FXRP = "0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA";
 export const FXRP = "0x0b6A3645c240605887a5532109323A3E12273dc7";
+
+// --- FDC (Flare Data Connector) — Coston2 testnet ---------------------------
+export const FDC_HUB = "0x48aC463d7975828989331F4De43341627b9c5f1D";
+export const FDC_FEE_CONFIG = "0x191a1282Ac700edE65c5B0AaF313BAcC3eA7fC7e";
+export const FDC_VERIFIER = "https://fdc-verifiers-testnet.flare.network";
+export const FDC_DA_LAYER = "https://ctn2-data-availability.flare.network";
+export const FDC_API_KEY = "00000000-0000-0000-0000-000000000000"; // public testnet key
+// votingRoundId = floor((collectTimestamp - FIRST_VOTING_ROUND_START) / ROUND_SECS)
+export const FDC_FIRST_ROUND_TS = 1658430000;
+export const FDC_ROUND_SECS = 90;
+
+export const fdcHubAbi = [
+  {
+    type: "function",
+    name: "requestAttestation",
+    stateMutability: "payable",
+    inputs: [{ name: "_data", type: "bytes" }],
+    outputs: [],
+  },
+];
+
+export const fdcFeeConfigAbi = [
+  {
+    type: "function",
+    name: "getRequestFee",
+    stateMutability: "view",
+    inputs: [{ name: "_data", type: "bytes" }],
+    outputs: [{ name: "_fee", type: "uint256" }],
+  },
+];
+
+// Minimal ERC20 for moving the minted FXRP into the vault.
+export const erc20Abi = [
+  {
+    type: "function",
+    name: "transfer",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "who", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+];
