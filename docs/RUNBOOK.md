@@ -38,39 +38,76 @@ npm run build
   `register-extension`, `check-tee-state`, `deploy-contract`, `start-proxy`,
   `start-tee`, `verify-deploy`.
 
-## 2. Build & pre-build (fresh EXTENSION_ID)
+## 2. The path that actually worked (GitHub Codespace)
 
-The redeploy may have wiped registrations. Re-run pre-build for a fresh `EXTENSION_ID`,
-then post-build. Select the TypeScript language path (`LANGUAGE=typescript`).
+> Docker Desktop on **Windows** produced no `server` binary from `go build` (a buildkit
+> bug — `go build ./cmd/extension` exits 0 in ~2 ms and writes nothing). Do **not** burn
+> time repairing it; it is non-reproducible. Build in a **GitHub Codespace** on
+> `Techkeyy/mindorr` — it also doubles as the reproducible deliverable. Edit code locally,
+> run the heavy runtime in the Codespace.
 
-## 3. Register the TEE
+Registered live on 2026-08-11 — these are the real values:
+
+| | |
+|---|---|
+| TEE machine ID | `0x4A47F54fC5C8f1e6321Ea29c47f5D33EF1d05056` |
+| Extension ID | `66129` |
+| Owner | `0x16Cbdc4974754F915aDd3Fb7240A7eF9699c8700` |
+| Status | **PRODUCTION** (code 2) |
+
+Bring-up in the Codespace (`/workspaces/mindorr/extension`):
 
 ```bash
-# capital R = fresh challenge
-register-tee -command rRap
+# 1. Chain env: create .env.coston2 (SIMULATED_TEE=true, MODE=1, CHAIN=coston2,
+#    CHAIN_URL, DEPLOYMENT_PRIVATE_KEY, INITIAL_OWNER), then activate it.
+./scripts/use-chain.sh coston2
+
+# 2. Proxy config from env — NO hand-edited heredoc (that is what kept corrupting).
+INDEXER_DB_PASSWORD=<from Flare pinned msg> ./scripts/write-proxy-config.sh
+
+# 3. Fresh registration: pre-build (new EXTENSION_ID) then bring the containers up.
+./scripts/pre-build.sh
+./scripts/start-services.sh
+
+# 4. Expose the proxy. In a Codespace the container's 6664 maps to host 6674.
+gh codespace ports visibility 6674:public -c "$CODESPACE_NAME"
+PUBLIC_URL="https://${CODESPACE_NAME}-6674.app.github.dev"
+
+# 5. Register the TEE to PRODUCTION. EXT_PROXY_URL is the LOCAL port the script polls;
+#    EXT_PROXY_HOST_URL is the PUBLIC url written on-chain for data providers.
+EXT_PROXY_URL=http://localhost:6674 EXT_PROXY_HOST_URL="$PUBLIC_URL" ./scripts/post-build.sh
 ```
 
-Then confirm state against the **live** manager:
+The live **indexer DB** is host `34.38.42.208`, db `indexer`, user `hackathon_user_57`
+(from the Flare FCC getting-started guide, step 3). The old `35.241.249.150` /
+`flare_indexer_coston2` in stale docs is dead/firewalled — the proxy PANICs with a MySQL
+dial timeout if you use it.
+
+## 3. Confirm PRODUCTION
+
+`cast` reads `CHAIN=coston2` from `.env` and rejects it as an unknown `--chain`, so pass
+the real one explicitly:
 
 ```bash
-# is the on-chain URL the one you're serving right now?
 cast call 0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE \
-  "getTeeMachine(address)((address,address,string))" <teeId>
-
-# 1 = INITIALIZED, 2 = PRODUCTION
-cast call 0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE \
-  "getTeeMachineStatus(address)(uint8)" <teeId>
+  "getTeeMachineStatus(address)(uint8)" 0x4A47F54fC5C8f1e6321Ea29c47f5D33EF1d05056 \
+  --chain flare-coston2 --rpc-url https://coston2-api.flare.network/ext/C/rpc
+# => 2  (PRODUCTION)
 ```
 
-A simulated TEE reaches **PRODUCTION** in seconds on a current stack. Stuck at
-`INITIALIZED` almost always means the on-chain URL is dead (see §4).
+A simulated TEE reaches PRODUCTION in seconds on a current stack. Stuck at `INITIALIZED`
+almost always means the on-chain URL is dead (see §4).
 
-## 4. Tunnel — do NOT use a quick tunnel
+## 4. Endpoint — a stable public URL, not a quick tunnel
 
-Data providers push actions to the URL stored on-chain. `trycloudflare` quick-tunnel
-hostnames change on restart, so the on-chain URL goes dead and the machine stalls at
-`INITIALIZED`. Use a **named** cloudflared tunnel or a **reserved** ngrok domain. If the
-tunnel rotates, update `EXT_PROXY_URL` and re-run post-build.
+Data providers push actions to the URL stored on-chain, so it must stay reachable. The
+Codespace public-port URL (`https://<CODESPACE_NAME>-6674.app.github.dev`) is derived from
+the **stable** `CODESPACE_NAME`, so it survives stop/start of the *same* Codespace — no
+re-registration needed on a restart, just re-run `write-proxy-config` + `start-services` +
+the port-visibility command. It does **not** survive if the Codespace sleeps and you never
+reopen it, and the port reverts to private on stop. `trycloudflare` quick tunnels rotate
+hostnames and go dead — never use them. If you must rotate the endpoint, update
+`EXT_PROXY_HOST_URL` and re-run post-build.
 
 ## 5. Attestation mode
 
