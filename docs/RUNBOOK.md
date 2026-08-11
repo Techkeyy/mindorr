@@ -98,6 +98,18 @@ cast call 0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE \
 A simulated TEE reaches PRODUCTION in seconds on a current stack. Stuck at `INITIALIZED`
 almost always means the on-chain URL is dead (see §4).
 
+## 3b. Resume after a Codespace restart (one command)
+
+A bare `docker compose up -d` regenerates the enclave key (new TEE ID) and the Codespace
+reverts port 6674 to private, so instructions 404. Recover in one shot:
+
+```bash
+./scripts/resume-coston2.sh   # up -d -> wait -> re-expose 6674 -> post-build (re-register)
+```
+
+The managed wallet (delivered via UPDATE_KEY) is stable across restarts, so the MindorrVault
+registration and any captured signatures stay valid.
+
 ## 4. Endpoint — a stable public URL, not a quick tunnel
 
 Data providers push actions to the URL stored on-chain, so it must stay reachable. The
