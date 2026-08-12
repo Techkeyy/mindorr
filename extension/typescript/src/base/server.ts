@@ -138,7 +138,7 @@ export class Server {
     // receive the payload regardless of how the action arrived.
     const msg =
       df.originalMessage ??
-      (df as Record<string, unknown>)["message"] as string ??
+      (df as unknown as Record<string, string>)["message"] ??
       "0x";
 
     const [data, status, err] = await this.serialize(() =>
