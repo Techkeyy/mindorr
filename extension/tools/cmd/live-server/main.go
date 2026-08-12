@@ -1,24 +1,18 @@
 // Command live-server exposes the Mindorr enclave over HTTP so the web app can
 // drive REAL per-user on-chain actions without holding any key or waiting on a
-// serverless timeout. It runs on the VPS beside the enclave and the funded
-// relayer key, and for each request it:
+// serverless timeout. It runs on the VPS beside the enclave.
 //
-//   1. sends a real on-chain instruction via the InstructionSender contract,
-//   2. lets the attested enclave derive the user's key, evaluate the guard, and
-//      sign (or refuse),
-//   3. polls the proxy for the real result and returns it (tx hash + the fresh
-//      enclave signature, or the refusal code).
+// Uses the proxy's POST /direct endpoint to bypass the on-chain instruction
+// pipeline entirely: instructions go straight to the TEE through the proxy's
+// direct queue, so there is no dependency on the indexer DB or the
+// InstructionSender contract.
 //
 // Nothing here is simulated: every wallet address is derived in-enclave per user,
 // every signature is produced in-enclave, every refusal is the enclave's own.
 //
-// The relayer only pays gas for the confidential instructions; it never learns a
-// user's managed key (that is derived inside the TEE from a master seed it holds).
-//
 // Usage:
 //
-//	live-server -a <addresses.json> -c <rpc> -p <proxyURL> \
-//	    -instructionSender <addr> -listen :8888
+//	live-server -p <proxyURL> -listen :8888
 package main
 
 import (
@@ -28,6 +22,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -35,67 +30,39 @@ import (
 	"sync"
 	"time"
 
-	"extension-scaffold/tools/pkg/configs"
 	"extension-scaffold/tools/pkg/fccutils"
-	"extension-scaffold/tools/pkg/support"
-	instrutils "extension-scaffold/tools/pkg/utils"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
 	"github.com/flare-foundation/tee-node/pkg/types"
 )
 
-// FXRP on Coston2 (verified live, 6 decimals) and the single allowlisted venue.
 const fxrp = "0x0b6A3645c240605887a5532109323A3E12273dc7"
 const defaultVenue = "0xa11a000100000000000000000000000000000000"
 
-// Fixed master seed. The enclave derives every user's key from it as
-// keccak256(seed ‖ userAddress), so per-user wallets are deterministic and stable
-// across enclave restarts. Delivered ECIES-encrypted to the TEE at startup; the
-// seed itself never leaves the VPS in plaintext.
 const masterSeedHex = "b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291"
-
-// Per-tx cap (FXRP base units) written into every user's policy.
 const maxTxAmount = "1000000000000000"
 
 var (
-	srv       *support.Support
-	senderAddr common.Address
 	proxyURL  string
 	authToken string
-	sendMu    sync.Mutex // serialize on-chain sends: one relayer nonce
+	sendMu    sync.Mutex
 )
 
 func main() {
-	af := flag.String("a", configs.AddressesFile, "file with deployed addresses")
-	cf := flag.String("c", configs.ChainNodeURL, "chain node url")
-	pf := flag.String("p", configs.ExtensionProxyURL, "extension proxy url")
-	isf := flag.String("instructionSender", "", "instructionSender address")
+	pf := flag.String("p", "http://localhost:6674", "extension proxy url")
 	listen := flag.String("listen", ":8888", "HTTP listen address")
 	flag.Parse()
 
-	if *isf == "" {
-		log.Fatal("instructionSender address is required (-instructionSender)")
-	}
 	proxyURL = *pf
-	senderAddr = common.HexToAddress(*isf)
-	authToken = os.Getenv("LIVE_SERVER_TOKEN") // optional shared secret
+	authToken = os.Getenv("LIVE_SERVER_TOKEN")
 
-	var err error
-	srv, err = support.DefaultSupport(*af, *cf)
-	if err != nil {
-		log.Fatalf("support init: %v", err)
-	}
-
-	// Bind the extension id (idempotent) and deliver the master seed once.
-	if err := instrutils.SetExtensionId(srv, senderAddr); err != nil && !strings.Contains(err.Error(), "already set") {
-		log.Fatalf("setExtensionId: %v", err)
-	}
 	if err := deliverSeed(); err != nil {
 		log.Fatalf("deliver master seed: %v", err)
 	}
-	log.Printf("master seed delivered; enclave ready. proxy=%s sender=%s", proxyURL, senderAddr.Hex())
+	log.Printf("master seed delivered; enclave ready. proxy=%s", proxyURL)
 
 	http.HandleFunc("/health", withCORS(handleHealth))
 	http.HandleFunc("/onboard", withCORS(requireAuth(handleOnboard)))
@@ -106,7 +73,58 @@ func main() {
 	log.Fatal(http.ListenAndServe(*listen, nil))
 }
 
-// --- seed delivery ----------------------------------------------------------
+// --- direct action sending ---------------------------------------------------
+
+// toHash replicates tee-node's utils.ToHash: UTF-8 bytes left-aligned in 32 bytes.
+func toHash(s string) common.Hash {
+	var h common.Hash
+	b := []byte(s)
+	if len(b) > 32 {
+		b = b[:32]
+	}
+	copy(h[:], b)
+	return h
+}
+
+type directInstruction struct {
+	OPType    common.Hash   `json:"opType"`
+	OPCommand common.Hash   `json:"opCommand"`
+	Message   hexutil.Bytes `json:"message"`
+}
+
+// sendDirect posts a DirectInstruction to the proxy's POST /direct endpoint,
+// bypassing the on-chain instruction pipeline entirely. Returns the action ID
+// for polling.
+func sendDirect(opType, opCommand string, payload []byte) (common.Hash, error) {
+	di := directInstruction{
+		OPType:    toHash(opType),
+		OPCommand: toHash(opCommand),
+		Message:   hexutil.Bytes(payload),
+	}
+	body, err := json.Marshal(di)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("marshal: %w", err)
+	}
+
+	resp, err := http.Post(proxyURL+"/direct", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("POST /direct: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return common.Hash{}, fmt.Errorf("POST /direct returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var action types.Action
+	if err := json.Unmarshal(respBody, &action); err != nil {
+		return common.Hash{}, fmt.Errorf("decode action: %w", err)
+	}
+	return action.Data.ID, nil
+}
+
+// --- seed delivery -----------------------------------------------------------
 
 func deliverSeed() error {
 	seed, err := hex.DecodeString(masterSeedHex)
@@ -128,7 +146,7 @@ func deliverSeed() error {
 	}
 
 	sendMu.Lock()
-	id, _, err := instrutils.SendUpdateKey(srv, senderAddr, ciphertext)
+	id, err := sendDirect("WALLET", "UPDATE_KEY", ciphertext)
 	sendMu.Unlock()
 	if err != nil {
 		return err
@@ -143,10 +161,10 @@ func deliverSeed() error {
 	return nil
 }
 
-// --- HTTP handlers ----------------------------------------------------------
+// --- HTTP handlers -----------------------------------------------------------
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, 200, map[string]any{"ok": true, "proxy": proxyURL, "sender": senderAddr.Hex()})
+	writeJSON(w, 200, map[string]any{"ok": true, "proxy": proxyURL})
 }
 
 type onboardReq struct {
@@ -165,14 +183,12 @@ func handleOnboard(w http.ResponseWriter, r *http.Request) {
 	}
 	risk := normalizeRisk(req.RiskLevel)
 
-	// 1) Derive the user's in-enclave wallet address locally (matches the enclave).
 	walletAddress, err := deriveWalletAddress(req.User)
 	if err != nil {
 		writeErr(w, 500, "derive failed: "+err.Error())
 		return
 	}
 
-	// 2) Set the user's policy (return address = their own address).
 	policy := map[string]any{
 		"owner":              req.User,
 		"returnAddress":      req.User,
@@ -184,8 +200,9 @@ func handleOnboard(w http.ResponseWriter, r *http.Request) {
 		"minHealthFactorBps": healthFloor(risk),
 	}
 	policyJSON, _ := json.Marshal(policy)
+
 	sendMu.Lock()
-	pid, policyTx, err := instrutils.SendSetPolicy(srv, senderAddr, policyJSON)
+	pid, err := sendDirect("VAULT", "SET_POLICY", policyJSON)
 	sendMu.Unlock()
 	if err != nil {
 		writeErr(w, 502, "policy send failed: "+err.Error())
@@ -203,7 +220,6 @@ func handleOnboard(w http.ResponseWriter, r *http.Request) {
 		"walletAddress": walletAddress,
 		"riskLevel":     risk,
 		"venue":         defaultVenue,
-		"policyTx":      policyTx.Hex(),
 	})
 }
 
@@ -232,14 +248,15 @@ func handleAllocate(w http.ResponseWriter, r *http.Request) {
 		"user": req.User, "asset": fxrp, "amount": amount, "venue": venue,
 		"portfolioValue": amount, "venueBalance": "0",
 	})
+
 	sendMu.Lock()
-	id, tx, err := instrutils.SendAllocate(srv, senderAddr, payload)
+	id, err := sendDirect("VAULT", "ALLOCATE", payload)
 	sendMu.Unlock()
 	if err != nil {
 		writeErr(w, 502, "allocate send failed: "+err.Error())
 		return
 	}
-	respondAction(w, id, tx.Hex())
+	respondAction(w, id)
 }
 
 func handleWithdraw(w http.ResponseWriter, r *http.Request) {
@@ -259,27 +276,25 @@ func handleWithdraw(w http.ResponseWriter, r *http.Request) {
 	payload, _ := json.Marshal(map[string]any{
 		"user": req.User, "asset": fxrp, "amount": amount, "to": req.To, "userAuthorized": true,
 	})
+
 	sendMu.Lock()
-	id, tx, err := instrutils.SendWithdraw(srv, senderAddr, payload)
+	id, err := sendDirect("VAULT", "WITHDRAW", payload)
 	sendMu.Unlock()
 	if err != nil {
 		writeErr(w, 502, "withdraw send failed: "+err.Error())
 		return
 	}
-	respondAction(w, id, tx.Hex())
+	respondAction(w, id)
 }
 
-// respondAction polls the enclave result and returns the fresh signature, or the
-// refusal. Both outcomes are real and carry the on-chain instruction tx hash.
-func respondAction(w http.ResponseWriter, id common.Hash, tx string) {
+func respondAction(w http.ResponseWriter, id common.Hash) {
 	status, data, logLine, err := poll(id)
 	if err != nil {
 		writeErr(w, 502, "poll failed: "+err.Error())
 		return
 	}
 	if status != 1 {
-		// The enclave refused: guard rejected the destination/amount. Real refusal.
-		writeJSON(w, 200, map[string]any{"ok": false, "refused": true, "tx": tx, "log": logLine})
+		writeJSON(w, 200, map[string]any{"ok": false, "refused": true, "log": logLine})
 		return
 	}
 	var out struct {
@@ -292,16 +307,14 @@ func respondAction(w http.ResponseWriter, id common.Hash, tx string) {
 	}
 	_ = json.Unmarshal(data, &out)
 	writeJSON(w, 200, map[string]any{
-		"ok": true, "tx": tx, "signer": out.Signer, "kind": out.Kind,
+		"ok": true, "signer": out.Signer, "kind": out.Kind,
 		"amount": out.Amount, "destination": out.Destination,
 		"digest": out.Digest, "signature": out.Signature,
 	})
 }
 
-// --- polling ----------------------------------------------------------------
+// --- polling -----------------------------------------------------------------
 
-// poll waits for the enclave result of an instruction. Retries up to 10 times
-// (60s total) because the enclave can lag behind the chain.
 func poll(id common.Hash) (int, json.RawMessage, string, error) {
 	for attempt := 0; attempt < 10; attempt++ {
 		time.Sleep(6 * time.Second)
@@ -319,16 +332,12 @@ func poll(id common.Hash) (int, json.RawMessage, string, error) {
 	return 0, nil, "", fmt.Errorf("instruction %s not processed after 60s", id.Hex())
 }
 
-// deriveWalletAddress computes a user's managed wallet address the SAME way the
-// enclave does (keccak256(seed ‖ userBytes) as the secp256k1 key), so the app can
-// show it without an on-chain round-trip. The enclave derives the same key when it
-// signs, so the addresses always match.
 func deriveWalletAddress(user string) (string, error) {
 	seed, err := hex.DecodeString(masterSeedHex)
 	if err != nil {
 		return "", err
 	}
-	userBytes := common.HexToAddress(user).Bytes() // 20 bytes
+	userBytes := common.HexToAddress(user).Bytes()
 	material := append(append([]byte{}, seed...), userBytes...)
 	key, err := crypto.ToECDSA(crypto.Keccak256(material))
 	if err != nil {
@@ -337,7 +346,7 @@ func deriveWalletAddress(user string) (string, error) {
 	return crypto.PubkeyToAddress(key.PublicKey).Hex(), nil
 }
 
-// --- helpers ----------------------------------------------------------------
+// --- helpers -----------------------------------------------------------------
 
 func normalizeRisk(r string) string {
 	switch strings.ToLower(strings.TrimSpace(r)) {

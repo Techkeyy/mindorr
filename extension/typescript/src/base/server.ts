@@ -133,8 +133,16 @@ export class Server {
     const handler = this.framework.lookup(df.opType, df.opCommand ?? "");
     if (!handler) return [501, "unsupported op type"];
 
+    // Direct actions (POST /direct on the proxy) wrap a DirectInstruction whose
+    // JSON field is "message", not "originalMessage". Accept both so handlers
+    // receive the payload regardless of how the action arrived.
+    const msg =
+      df.originalMessage ??
+      (df as Record<string, unknown>)["message"] as string ??
+      "0x";
+
     const [data, status, err] = await this.serialize(() =>
-      handler(df.originalMessage ?? "0x"),
+      handler(msg),
     );
 
     // Log values are part of the contract (§4.6).
