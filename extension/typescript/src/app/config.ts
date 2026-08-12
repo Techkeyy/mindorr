@@ -8,9 +8,11 @@
 
 export const VERSION = "0.1.0";
 
-// Managed wallet lifecycle.
+// Managed wallet lifecycle. UPDATE_KEY delivers the master seed (once); CREATE
+// derives and reveals a specific user's managed wallet from that seed.
 export const OP_TYPE_WALLET = "WALLET";
 export const OP_COMMAND_UPDATE_KEY = "UPDATE_KEY";
+export const OP_COMMAND_CREATE = "CREATE";
 
 // Vault operations. SET_POLICY and WITHDRAW are owner-signed (enforced on-chain);
 // ALLOCATE and REBALANCE are autonomous within policy.

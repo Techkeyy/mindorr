@@ -120,6 +120,13 @@ func SendUpdateKey(s *support.Support, addr common.Address, encryptedKey []byte)
 	})
 }
 
+// SendCreate derives and reveals a user's managed wallet via WALLET/CREATE.
+func SendCreate(s *support.Support, addr common.Address, userJSON []byte) (common.Hash, common.Hash, error) {
+	return sendBytesOp(s, addr, "sendCreate", userJSON, func(sender *helloworld.HelloWorldInstructionSender, o *bind.TransactOpts) (*types.Transaction, error) {
+		return sender.SendCreate(o, userJSON)
+	})
+}
+
 // SendSetPolicy sets the owner's policy via VAULT/SET_POLICY. Needs no key.
 func SendSetPolicy(s *support.Support, addr common.Address, policyJSON []byte) (common.Hash, common.Hash, error) {
 	return sendBytesOp(s, addr, "sendSetPolicy", policyJSON, func(sender *helloworld.HelloWorldInstructionSender, o *bind.TransactOpts) (*types.Transaction, error) {

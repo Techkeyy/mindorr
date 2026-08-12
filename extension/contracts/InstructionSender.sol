@@ -25,6 +25,8 @@ contract HelloWorldInstructionSender {
     bytes32 public constant OP_TYPE_WALLET = bytes32("WALLET");
     // forge-lint: disable-next-line(unsafe-typecast)
     bytes32 public constant OP_COMMAND_UPDATE_KEY = bytes32("UPDATE_KEY");
+    // forge-lint: disable-next-line(unsafe-typecast)
+    bytes32 public constant OP_COMMAND_CREATE = bytes32("CREATE");
 
     // forge-lint: disable-next-line(unsafe-typecast)
     bytes32 public constant OP_TYPE_VAULT = bytes32("VAULT");
@@ -84,6 +86,12 @@ contract HelloWorldInstructionSender {
     /// @param _encryptedKey secp256k1 key ciphertext (encrypted to the TEE pubkey).
     function sendUpdateKey(bytes calldata _encryptedKey) external payable {
         _send(OP_TYPE_WALLET, OP_COMMAND_UPDATE_KEY, _encryptedKey);
+    }
+
+    /// @notice WALLET/CREATE — derive and reveal a user's managed wallet from the seed.
+    /// @param _user JSON-encoded {user} payload (the owner address).
+    function sendCreate(bytes calldata _user) external payable {
+        _send(OP_TYPE_WALLET, OP_COMMAND_CREATE, _user);
     }
 
     /// @notice VAULT/SET_POLICY — set the owner's policy (allowlist, caps, return address).

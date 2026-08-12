@@ -212,8 +212,9 @@ describe("state wire format", () => {
     const [, body] = await srv.handleRequest("GET", "/state", "");
     const state = (body as { state: Record<string, unknown> }).state;
 
-    expect(state.hasPolicy).toBe(true);
-    expect(state.riskLevel).toBe("moderate");
+    // Aggregate, multi-tenant census: setting one policy registers one user.
+    expect(state.users).toBe(1);
+    expect(state.hasSeed).toBe(false);
   });
 });
 

@@ -1,6 +1,5 @@
-/** Mindorr handlers — evaluate-then-sign behaviour. */
+/** Mindorr handlers — per-user evaluate-then-sign behaviour. */
 
-import { privateKeyToAccount } from "viem/accounts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as handlers from "../app/handlers.js";
@@ -10,19 +9,20 @@ import type { HandlerResult } from "../base/types.js";
 
 // --- fixtures ---------------------------------------------------------------
 
-// Anvil account #0 — a known-valid secp256k1 key. Its address is derived, not
-// hardcoded, so the assertions can't drift.
-const PK = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-const KEY_BYTES = hexToBytes(PK);
-const EXPECTED_ADDR = privateKeyToAccount(PK).address.toLowerCase();
+// A 32-byte master seed. The enclave derives each user's key from it; addresses
+// are read back from CREATE, not hardcoded, so assertions can't drift.
+const SEED = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+const SEED_BYTES = hexToBytes(SEED);
 
+const OWNER = "0x1111111111111111111111111111111111111111";
+const OWNER_2 = "0x4444444444444444444444444444444444444444";
 const RETURN = "0x2222222222222222222222222222222222222222";
 const FXRP = "0x3333333333333333333333333333333333333333";
 const VAULT_A = "0xAAAA000000000000000000000000000000000001";
 const ATTACKER = "0xdead00000000000000000000000000000000beef";
 
-const VALID_POLICY = {
-  owner: "0x1111111111111111111111111111111111111111",
+const policyFor = (owner: string) => ({
+  owner,
   returnAddress: RETURN,
   riskLevel: "moderate",
   asset: FXRP,
@@ -30,16 +30,20 @@ const VALID_POLICY = {
   maxVenueBps: 10000,
   maxTxAmount: "1000000000000000000000",
   minHealthFactorBps: 12000,
-};
+});
+
+const VALID_POLICY = policyFor(OWNER);
 
 const toMsg = (o: unknown): string => bytesToHex(Buffer.from(JSON.stringify(o), "utf-8"));
 const decode = (r: HandlerResult): Record<string, unknown> =>
   JSON.parse(Buffer.from(hexToBytes(r[0] as string)).toString("utf-8"));
 
-/** Load a key (through the mocked node) and set a policy — the ready state. */
-async function ready(): Promise<void> {
-  await handlers.handleUpdateKey(bytesToHex(KEY_BYTES));
-  handlers.handleSetPolicy(toMsg(VALID_POLICY));
+/** Deliver the seed, create the user's wallet, set their policy. Returns wallet addr. */
+async function ready(owner: string = OWNER): Promise<string> {
+  await handlers.handleUpdateKey(bytesToHex(SEED_BYTES));
+  const c = handlers.handleCreateWallet(toMsg({ user: owner }));
+  handlers.handleSetPolicy(toMsg(policyFor(owner)));
+  return String(decode(c).walletAddress).toLowerCase();
 }
 
 beforeEach(() => {
@@ -54,16 +58,46 @@ afterEach(() => vi.restoreAllMocks());
 // --- UPDATE_KEY -------------------------------------------------------------
 
 describe("WALLET/UPDATE_KEY", () => {
-  it("loads a key in-enclave and reports the derived wallet address", async () => {
-    const r = await handlers.handleUpdateKey(bytesToHex(KEY_BYTES));
+  it("loads the master seed in-enclave", async () => {
+    const r = await handlers.handleUpdateKey(bytesToHex(SEED_BYTES));
     expect(r[1]).toBe(1);
-    expect(String(decode(r).walletAddress).toLowerCase()).toBe(EXPECTED_ADDR);
-    expect((handlers.reportState() as { hasKey: boolean }).hasKey).toBe(true);
+    expect((handlers.reportState() as { hasSeed: boolean }).hasSeed).toBe(true);
   });
 
   it("fails on an empty payload", async () => {
     const r = await handlers.handleUpdateKey("0x");
     expect(r[1]).toBe(0);
+  });
+});
+
+// --- CREATE -----------------------------------------------------------------
+
+describe("WALLET/CREATE", () => {
+  it("derives a wallet address for a user", async () => {
+    await handlers.handleUpdateKey(bytesToHex(SEED_BYTES));
+    const r = handlers.handleCreateWallet(toMsg({ user: OWNER }));
+    expect(r[1]).toBe(1);
+    expect(String(decode(r).walletAddress)).toMatch(/^0x[0-9a-fA-F]{40}$/);
+  });
+
+  it("is deterministic for the same user", async () => {
+    await handlers.handleUpdateKey(bytesToHex(SEED_BYTES));
+    const a = decode(handlers.handleCreateWallet(toMsg({ user: OWNER }))).walletAddress;
+    const b = decode(handlers.handleCreateWallet(toMsg({ user: OWNER }))).walletAddress;
+    expect(a).toBe(b);
+  });
+
+  it("gives different users different wallets", async () => {
+    await handlers.handleUpdateKey(bytesToHex(SEED_BYTES));
+    const a = decode(handlers.handleCreateWallet(toMsg({ user: OWNER }))).walletAddress;
+    const b = decode(handlers.handleCreateWallet(toMsg({ user: OWNER_2 }))).walletAddress;
+    expect(a).not.toBe(b);
+  });
+
+  it("refuses before the seed is loaded", () => {
+    const r = handlers.handleCreateWallet(toMsg({ user: OWNER }));
+    expect(r[1]).toBe(0);
+    expect(r[2]).toContain("no master seed");
   });
 });
 
@@ -73,9 +107,7 @@ describe("VAULT/SET_POLICY", () => {
   it("accepts a valid policy", () => {
     const r = handlers.handleSetPolicy(toMsg(VALID_POLICY));
     expect(r[1]).toBe(1);
-    const s = handlers.reportState() as { hasPolicy: boolean; riskLevel: string };
-    expect(s.hasPolicy).toBe(true);
-    expect(s.riskLevel).toBe("moderate");
+    expect((handlers.reportState() as { users: number }).users).toBe(1);
   });
 
   it("rejects a malformed policy", () => {
@@ -91,6 +123,7 @@ describe("VAULT/CONFIRM_DEPOSIT", () => {
   const RECIP = `0x${"22".repeat(32)}`;
   const REF = `0x${"33".repeat(32)}`;
   const goodDeposit = {
+    user: OWNER,
     proof: { status: 0, sourceId: SRC, receivingAddressHash: RECIP, receivedAmount: "5000000", standardPaymentReference: REF },
     expected: { sourceId: SRC, receivingAddressHash: RECIP, minAmount: "1000000", reference: REF },
   };
@@ -99,8 +132,8 @@ describe("VAULT/CONFIRM_DEPOSIT", () => {
     handlers.handleSetPolicy(toMsg(VALID_POLICY));
     const r = handlers.handleConfirmDeposit(toMsg(goodDeposit));
     expect(r[1]).toBe(1);
-    const s = handlers.reportState() as { confirmedFxrp: string; depositsConfirmed: number };
-    expect(s.confirmedFxrp).toBe("5000000");
+    const s = handlers.reportState() as { depositsConfirmed: number };
+    expect(String(decode(r).totalConfirmedFxrp)).toBe("5000000");
     expect(s.depositsConfirmed).toBe(1);
   });
 
@@ -122,43 +155,51 @@ describe("VAULT/CONFIRM_DEPOSIT", () => {
 // --- guarded vault actions --------------------------------------------------
 
 describe("VAULT/ALLOCATE", () => {
-  it("signs a deposit into an approved vault", async () => {
-    await ready();
-    const r = await handlers.handleVaultAction("allocate", toMsg({ asset: FXRP, amount: "1000", venue: VAULT_A }));
+  it("signs a deposit into an approved vault with the user's derived key", async () => {
+    const walletAddr = await ready();
+    const r = await handlers.handleVaultAction("allocate", toMsg({ user: OWNER, asset: FXRP, amount: "1000", venue: VAULT_A }));
     expect(r[1]).toBe(1);
     const out = decode(r);
-    expect(String(out.signer).toLowerCase()).toBe(EXPECTED_ADDR);
+    expect(String(out.signer).toLowerCase()).toBe(walletAddr);
     expect(String(out.signature)).toMatch(/^0x[0-9a-f]+$/i);
     expect((handlers.reportState() as { actionsSigned: number }).actionsSigned).toBe(1);
   });
 
   it("BOUNCES a deposit into a non-allowlisted vault — no signature", async () => {
     await ready();
-    const r = await handlers.handleVaultAction("allocate", toMsg({ asset: FXRP, amount: "1000", venue: ATTACKER }));
+    const r = await handlers.handleVaultAction("allocate", toMsg({ user: OWNER, asset: FXRP, amount: "1000", venue: ATTACKER }));
     expect(r[1]).toBe(0);
     expect(r[2]).toContain("DEST_NOT_ALLOWED");
     expect(r[0]).toBeNull();
     expect((handlers.reportState() as { actionsRefused: number }).actionsRefused).toBe(1);
+  });
+
+  it("keeps users isolated — one user's policy can't authorize another's action", async () => {
+    await ready(OWNER); // OWNER onboarded, OWNER_2 is not
+    handlers.handleCreateWallet(toMsg({ user: OWNER_2 }));
+    const r = await handlers.handleVaultAction("allocate", toMsg({ user: OWNER_2, asset: FXRP, amount: "1000", venue: VAULT_A }));
+    expect(r[1]).toBe(0);
+    expect(r[2]).toContain("no policy set");
   });
 });
 
 describe("VAULT/WITHDRAW", () => {
   it("signs a withdrawal back to the owner's return address", async () => {
     await ready();
-    const r = await handlers.handleVaultAction("withdraw", toMsg({ asset: FXRP, amount: "1000", to: RETURN, userAuthorized: true }));
+    const r = await handlers.handleVaultAction("withdraw", toMsg({ user: OWNER, asset: FXRP, amount: "1000", to: RETURN, userAuthorized: true }));
     expect(r[1]).toBe(1);
   });
 
   it("BOUNCES a withdrawal to any other address, even when signed", async () => {
     await ready();
-    const r = await handlers.handleVaultAction("withdraw", toMsg({ asset: FXRP, amount: "1000", to: ATTACKER, userAuthorized: true }));
+    const r = await handlers.handleVaultAction("withdraw", toMsg({ user: OWNER, asset: FXRP, amount: "1000", to: ATTACKER, userAuthorized: true }));
     expect(r[1]).toBe(0);
     expect(r[2]).toContain("WITHDRAW_NON_RETURN");
   });
 
   it("BOUNCES a withdrawal lacking a fresh owner signature", async () => {
     await ready();
-    const r = await handlers.handleVaultAction("withdraw", toMsg({ asset: FXRP, amount: "1000", to: RETURN }));
+    const r = await handlers.handleVaultAction("withdraw", toMsg({ user: OWNER, asset: FXRP, amount: "1000", to: RETURN }));
     expect(r[1]).toBe(0);
     expect(r[2]).toContain("NEEDS_USER_SIGNATURE");
   });
@@ -166,15 +207,23 @@ describe("VAULT/WITHDRAW", () => {
 
 describe("preconditions", () => {
   it("refuses any action before a policy is set", async () => {
-    const r = await handlers.handleVaultAction("allocate", toMsg({ asset: FXRP, amount: "1", venue: VAULT_A }));
+    await handlers.handleUpdateKey(bytesToHex(SEED_BYTES));
+    const r = await handlers.handleVaultAction("allocate", toMsg({ user: OWNER, asset: FXRP, amount: "1", venue: VAULT_A }));
     expect(r[1]).toBe(0);
     expect(r[2]).toContain("no policy set");
   });
 
-  it("refuses any action before a key is loaded", async () => {
+  it("refuses any action before the seed is loaded", async () => {
     handlers.handleSetPolicy(toMsg(VALID_POLICY));
-    const r = await handlers.handleVaultAction("allocate", toMsg({ asset: FXRP, amount: "1", venue: VAULT_A }));
+    const r = await handlers.handleVaultAction("allocate", toMsg({ user: OWNER, asset: FXRP, amount: "1", venue: VAULT_A }));
     expect(r[1]).toBe(0);
     expect(r[2]).toContain("no managed key");
+  });
+
+  it("requires a user field on vault actions", async () => {
+    await ready();
+    const r = await handlers.handleVaultAction("allocate", toMsg({ asset: FXRP, amount: "1000", venue: VAULT_A }));
+    expect(r[1]).toBe(0);
+    expect(r[2]).toContain('"user"');
   });
 });
