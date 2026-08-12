@@ -492,6 +492,31 @@ section[id] { scroll-margin-top: var(--nav-h); }
   color: var(--stop);
   margin-top: 0.1rem;
 }
+.step .receipt {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.7rem;
+  color: var(--gold, #d8ac54);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(216, 172, 84, 0.35);
+  width: fit-content;
+}
+.step .receipt:hover { border-bottom-color: var(--gold, #d8ac54); }
+
+.faucets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.6rem;
+  font-size: 0.7rem;
+  color: var(--faint);
+}
+.faucets a {
+  color: var(--gold, #d8ac54);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(216, 172, 84, 0.35);
+}
 
 /* composer */
 .composer {

@@ -82,43 +82,43 @@ contract HelloWorldInstructionSender {
         revert("Extension ID not found.");
     }
 
-    /// @notice WALLET/UPDATE_KEY — deliver the signing key, encrypted to the TEE.
+    /// @notice WALLET/UPDATE_KEY, deliver the signing key, encrypted to the TEE.
     /// @param _encryptedKey secp256k1 key ciphertext (encrypted to the TEE pubkey).
     function sendUpdateKey(bytes calldata _encryptedKey) external payable {
         _send(OP_TYPE_WALLET, OP_COMMAND_UPDATE_KEY, _encryptedKey);
     }
 
-    /// @notice WALLET/CREATE — derive and reveal a user's managed wallet from the seed.
+    /// @notice WALLET/CREATE, derive and reveal a user's managed wallet from the seed.
     /// @param _user JSON-encoded {user} payload (the owner address).
     function sendCreate(bytes calldata _user) external payable {
         _send(OP_TYPE_WALLET, OP_COMMAND_CREATE, _user);
     }
 
-    /// @notice VAULT/SET_POLICY — set the owner's policy (allowlist, caps, return address).
+    /// @notice VAULT/SET_POLICY, set the owner's policy (allowlist, caps, return address).
     /// @param _policy JSON-encoded policy payload.
     function sendSetPolicy(bytes calldata _policy) external payable {
         _send(OP_TYPE_VAULT, OP_COMMAND_SET_POLICY, _policy);
     }
 
-    /// @notice VAULT/CONFIRM_DEPOSIT — verify an XRP deposit via an FDC proof.
+    /// @notice VAULT/CONFIRM_DEPOSIT, verify an XRP deposit via an FDC proof.
     /// @param _deposit JSON-encoded {proof, expected} payload.
     function sendConfirmDeposit(bytes calldata _deposit) external payable {
         _send(OP_TYPE_VAULT, OP_COMMAND_CONFIRM_DEPOSIT, _deposit);
     }
 
-    /// @notice VAULT/ALLOCATE — allocate to an allowlisted venue (autonomous within policy).
+    /// @notice VAULT/ALLOCATE, allocate to an allowlisted venue (autonomous within policy).
     /// @param _intent JSON-encoded allocate intent.
     function sendAllocate(bytes calldata _intent) external payable {
         _send(OP_TYPE_VAULT, OP_COMMAND_ALLOCATE, _intent);
     }
 
-    /// @notice VAULT/REBALANCE — reaffirm the split is within policy (autonomous).
+    /// @notice VAULT/REBALANCE, reaffirm the split is within policy (autonomous).
     /// @param _intent JSON-encoded rebalance intent.
     function sendRebalance(bytes calldata _intent) external payable {
         _send(OP_TYPE_VAULT, OP_COMMAND_REBALANCE, _intent);
     }
 
-    /// @notice VAULT/WITHDRAW — withdraw to the owner's return address only.
+    /// @notice VAULT/WITHDRAW, withdraw to the owner's return address only.
     /// @param _intent JSON-encoded withdraw intent.
     function sendWithdraw(bytes calldata _intent) external payable {
         _send(OP_TYPE_VAULT, OP_COMMAND_WITHDRAW, _intent);

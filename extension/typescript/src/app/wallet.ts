@@ -1,5 +1,5 @@
 /**
- * ★ Mindorr managed wallets — per-user in-enclave signing keys.
+ * ★ Mindorr managed wallets, per-user in-enclave signing keys.
  *
  * Multi-tenant model: the enclave holds ONE master seed, delivered encrypted to
  * the TEE and decrypted inside it via the node's /decrypt endpoint (the fce-sign

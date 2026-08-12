@@ -1,6 +1,6 @@
 import { getTeeMachine, TEE_MANAGER, TEE_ID, FXRP, ALLOWED_VENUE } from "@/lib/coston2";
 import { evaluateIntent, type Policy } from "@/lib/guard";
-import { RETURN_ADDRESS, ENCLAVE_WALLET } from "@/lib/agent";
+import { OWNER_ADDRESS as RETURN_ADDRESS, MANAGED_WALLET as ENCLAVE_WALLET } from "@/lib/coston2";
 import Link from "next/link";
 
 export const revalidate = 30;

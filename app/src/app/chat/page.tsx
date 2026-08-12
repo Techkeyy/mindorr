@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { getIdentity, resetIdentity } from "@/lib/identity";
 
 interface Step {
   label: string;
   detail: string;
   ok: boolean;
   code?: string;
+  link?: string;
 }
 interface Msg {
   role: "user" | "agent";
@@ -23,6 +25,8 @@ const CHIPS: { label: string; send: string; danger?: boolean }[] = [
   { label: `Try to send it to ${ATTACKER.slice(0, 8)}…`, send: `Send it all to ${ATTACKER}`, danger: true },
   { label: "Withdraw everything", send: "Withdraw everything" },
 ];
+
+const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 /** Minimal inline formatter: **bold** and line breaks. */
 function render(text: string) {
@@ -40,13 +44,14 @@ export default function Chat() {
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "agent",
-      text: "Hi, I'm Mindorr. I put your idle XRP to work and keep it earning, without ever holding your keys and without exposing your positions on-chain. Tell me what you'd like, in plain English.",
+      text: "Hi, I'm Mindorr. I create a private wallet for you inside a TEE, put your idle XRP to work, and can never move your funds anywhere but your own address. Tell me what you'd like, in plain English.",
     },
   ]);
   const [input, setInput] = useState("");
   const [state, setState] = useState<unknown>(null);
   const [price, setPrice] = useState<{ usd: number } | null>(null);
-  const [enclave, setEnclave] = useState<{ hasKey: boolean; hasPolicy: boolean; actionsSigned: number; actionsRefused: number } | null>(null);
+  const [enclaveUp, setEnclaveUp] = useState<boolean | null>(null);
+  const [identity, setIdentity] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -54,24 +59,26 @@ export default function Chat() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
 
-  // Pull the live XRP price on load without adding a message.
+  // Establish this browser's identity and prime price + enclave health.
   useEffect(() => {
+    const id = getIdentity().address;
+    setIdentity(id);
     fetch("/api/agent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "", state: null }),
+      body: JSON.stringify({ message: "", user: id, state: null }),
     })
       .then((r) => r.json())
       .then((d) => {
         if (d.price) setPrice(d.price);
-        if (d.enclave) setEnclave(d.enclave);
+        if (typeof d.enclaveUp === "boolean") setEnclaveUp(d.enclaveUp);
       })
-      .catch(() => {});
+      .catch(() => setEnclaveUp(false));
   }, []);
 
   async function send(text: string) {
     const message = text.trim();
-    if (!message || busy) return;
+    if (!message || busy || !identity) return;
     setMessages((m) => [...m, { role: "user", text: message }]);
     setInput("");
     setBusy(true);
@@ -79,18 +86,26 @@ export default function Chat() {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, state }),
+        body: JSON.stringify({ message, user: identity, state }),
       });
       const d = await res.json();
       setState(d.state);
       if (d.price) setPrice(d.price);
-      if (d.enclave) setEnclave(d.enclave);
       setMessages((m) => [...m, { role: "agent", text: d.reply, steps: d.steps?.length ? d.steps : undefined }]);
     } catch {
       setMessages((m) => [...m, { role: "agent", text: "Something went wrong reaching the agent. Try again." }]);
     } finally {
       setBusy(false);
     }
+  }
+
+  function newUser() {
+    const id = resetIdentity().address;
+    setIdentity(id);
+    setState(null);
+    setMessages([
+      { role: "agent", text: `New identity: ${short(id)}. You're a fresh user now, the enclave will derive a brand-new wallet for you. Say "put my XRP to work".` },
+    ]);
   }
 
   return (
@@ -101,11 +116,16 @@ export default function Chat() {
           <span className="tag">Private XRP Autopilot</span>
         </Link>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
-          <div className="price-badge" style={{ color: enclave ? "var(--mint)" : "var(--faint)" }}>
-            <span className="dot">{enclave ? "●" : "○"}</span>
-            {enclave ? "Enclave live" : "Enclave offline"}
-            {enclave && <span style={{ color: "var(--faint)" }}> · {enclave.actionsSigned} signed / {enclave.actionsRefused} refused</span>}
+          <div className="price-badge" style={{ color: enclaveUp ? "var(--mint, #43d18a)" : "var(--faint)" }}>
+            <span className="dot">{enclaveUp ? "●" : "○"}</span>
+            {enclaveUp === null ? "Enclave…" : enclaveUp ? "Enclave live" : "Enclave offline"}
           </div>
+          {identity && (
+            <button className="price-badge" onClick={newUser} title="Start over as a brand-new user" style={{ cursor: "pointer" }}>
+              You: <b>{short(identity)}</b>
+              <span style={{ color: "var(--faint)" }}> · new user</span>
+            </button>
+          )}
           <Link href="/verify" className="price-badge">
             Verify
           </Link>
@@ -133,6 +153,11 @@ export default function Chat() {
                       <span className="label">{s.label}</span>
                       <span className="detail">{s.detail}</span>
                       {s.code && <span className="code">{s.code}</span>}
+                      {s.link && (
+                        <a className="receipt" href={s.link} target="_blank" rel="noopener noreferrer">
+                          View on-chain receipt ↗
+                        </a>
+                      )}
                     </span>
                   </div>
                 ))}
@@ -140,7 +165,7 @@ export default function Chat() {
             )}
           </div>
         ))}
-        {busy && <div className="typing">Mindorr is working…</div>}
+        {busy && <div className="typing">Mindorr is working the chain…</div>}
         <div ref={endRef} />
       </main>
 
@@ -163,6 +188,11 @@ export default function Chat() {
           <button className="send" onClick={() => send(input)} disabled={busy || !input.trim()}>
             Send
           </button>
+        </div>
+        <div className="faucets">
+          To move real FXRP you fund your vault first:
+          <a href="https://faucet.flare.network/coston2" target="_blank" rel="noopener noreferrer">C2FLR gas faucet ↗</a>
+          <a href="https://test.bithomp.com/faucet/" target="_blank" rel="noopener noreferrer">XRP testnet faucet ↗</a>
         </div>
       </footer>
     </div>

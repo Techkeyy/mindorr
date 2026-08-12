@@ -1,5 +1,5 @@
 /**
- * ★ Mindorr handlers — where the per-user guard meets the per-user signer.
+ * ★ Mindorr handlers, where the per-user guard meets the per-user signer.
  *
  * Multi-tenant: the enclave holds one master seed (WALLET/UPDATE_KEY) and derives
  * a distinct managed wallet per user. Every user has their own policy and their
@@ -132,7 +132,7 @@ function reqUser(o: unknown): [Address | null, string | null] {
 
 // --- handlers ---------------------------------------------------------------
 
-/** WALLET/UPDATE_KEY — deliver the master seed, encrypted to the TEE. */
+/** WALLET/UPDATE_KEY, deliver the master seed, encrypted to the TEE. */
 export async function handleUpdateKey(msg: string): Promise<HandlerResult> {
   let raw: Uint8Array;
   try {
@@ -152,7 +152,7 @@ export async function handleUpdateKey(msg: string): Promise<HandlerResult> {
 }
 
 /**
- * WALLET/CREATE — derive and reveal a user's managed wallet from the master seed.
+ * WALLET/CREATE, derive and reveal a user's managed wallet from the master seed.
  * Deterministic: calling it again for the same user returns the same address.
  * This is what the app calls to onboard a new user and learn the address it must
  * register on-chain (MindorrVault.registerAccount).
@@ -176,7 +176,7 @@ export function handleCreateWallet(msg: string): HandlerResult {
   return okJson({ user: user!, walletAddress });
 }
 
-/** VAULT/SET_POLICY — set a user's policy (allowlist, caps, return address). */
+/** VAULT/SET_POLICY, set a user's policy (allowlist, caps, return address). */
 export function handleSetPolicy(msg: string): HandlerResult {
   const [obj, err] = decodeJson(msg);
   if (err) return [null, 0, `decoding request: ${err}`];
@@ -193,7 +193,7 @@ export function handleSetPolicy(msg: string): HandlerResult {
 }
 
 /**
- * VAULT/CONFIRM_DEPOSIT — verify, via an FDC Payment proof, that a user's XRP
+ * VAULT/CONFIRM_DEPOSIT, verify, via an FDC Payment proof, that a user's XRP
  * actually arrived, before any FXRP is credited to them. The on-chain
  * AssetManagerFXRP.executeMinting(proof) is a separate tx (docs/DEPLOY.md); this
  * is the confidential check that gates it.
@@ -230,7 +230,7 @@ export function handleConfirmDeposit(msg: string): HandlerResult {
   });
 }
 
-/** VAULT/{ALLOCATE,REBALANCE,WITHDRAW} — evaluate, then sign only if allowed. */
+/** VAULT/{ALLOCATE,REBALANCE,WITHDRAW}, evaluate, then sign only if allowed. */
 export async function handleVaultAction(kind: IntentKind, msg: string): Promise<HandlerResult> {
   const [obj, err] = decodeJson(msg);
   if (err) return [null, 0, `decoding request: ${err}`];

@@ -110,7 +110,7 @@ func SetExtensionId(s *support.Support, instructionSenderAddress common.Address)
 //
 // Every Mindorr op carries a single `bytes` payload (JSON for the VAULT ops,
 // the encrypted key for WALLET/UPDATE_KEY), so one helper covers them all.
-// Each returns (instructionId, txHash) — poll the proxy for the result with
+// Each returns (instructionId, txHash), poll the proxy for the result with
 // fccutils.ActionResult(proxyURL, instructionId).
 
 // SendUpdateKey delivers the signing key (encrypted to the TEE) via WALLET/UPDATE_KEY.
