@@ -46,6 +46,7 @@ export default function Chat() {
   const [input, setInput] = useState("");
   const [state, setState] = useState<unknown>(null);
   const [price, setPrice] = useState<{ usd: number } | null>(null);
+  const [enclave, setEnclave] = useState<{ hasKey: boolean; hasPolicy: boolean; actionsSigned: number; actionsRefused: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -61,7 +62,10 @@ export default function Chat() {
       body: JSON.stringify({ message: "", state: null }),
     })
       .then((r) => r.json())
-      .then((d) => d.price && setPrice(d.price))
+      .then((d) => {
+        if (d.price) setPrice(d.price);
+        if (d.enclave) setEnclave(d.enclave);
+      })
       .catch(() => {});
   }, []);
 
@@ -80,6 +84,7 @@ export default function Chat() {
       const d = await res.json();
       setState(d.state);
       if (d.price) setPrice(d.price);
+      if (d.enclave) setEnclave(d.enclave);
       setMessages((m) => [...m, { role: "agent", text: d.reply, steps: d.steps?.length ? d.steps : undefined }]);
     } catch {
       setMessages((m) => [...m, { role: "agent", text: "Something went wrong reaching the agent. Try again." }]);
@@ -95,7 +100,12 @@ export default function Chat() {
           <h1>Mindorr</h1>
           <span className="tag">Private XRP Autopilot</span>
         </Link>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+          <div className="price-badge" style={{ color: enclave ? "var(--mint)" : "var(--faint)" }}>
+            <span className="dot">{enclave ? "●" : "○"}</span>
+            {enclave ? "Enclave live" : "Enclave offline"}
+            {enclave && <span style={{ color: "var(--faint)" }}> · {enclave.actionsSigned} signed / {enclave.actionsRefused} refused</span>}
+          </div>
           <Link href="/verify" className="price-badge">
             Verify
           </Link>

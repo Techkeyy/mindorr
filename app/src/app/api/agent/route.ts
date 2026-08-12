@@ -10,10 +10,11 @@ import {
   type Step,
 } from "@/lib/agent";
 import { getVaultFxrp, getXrpUsd, type XrpPrice } from "@/lib/coston2";
+import { getEnclaveState, type EnclaveState } from "@/lib/enclave";
 
 const NOT_YET = 'Nothing invested yet. Try "put my XRP to work, low risk" and I\'ll take it from there.';
 
-function statusText(state: AgentState, price: XrpPrice | null): string {
+function statusText(state: AgentState, price: XrpPrice | null, enclave: EnclaveState | null): string {
   if (!state.onboarded) return NOT_YET;
   const pv = portfolioValue(state);
   const lines: string[] = [];
@@ -23,6 +24,9 @@ function statusText(state: AgentState, price: XrpPrice | null): string {
   }
   if (price) {
     lines.push(`**XRP/USD (live from Flare FTSO):** $${price.usd.toFixed(4)} → your position ≈ $${(pv * price.usd).toLocaleString(undefined, { maximumFractionDigits: 0 })}.`);
+  }
+  if (enclave) {
+    lines.push(`**Enclave (live):** ${enclave.actionsSigned} actions signed, ${enclave.actionsRefused} refused. Managed wallet: ${enclave.walletAddress ? short(enclave.walletAddress) : "not loaded"}.`);
   }
   lines.push(`Your balances and strategy stay inside the enclave, so none of this is visible on the public chain. Wallet ${short(state.walletAddress!)}.`);
   return lines.join("\n");
@@ -36,7 +40,7 @@ export async function POST(request: Request): Promise<Response> {
   const message = body.message ?? "";
   let state: AgentState = body.state ?? initialState();
   const action = parse(message);
-  const price = await getXrpUsd();
+  const [price, enclave] = await Promise.all([getXrpUsd(), getEnclaveState()]);
 
   let reply = "";
   let steps: Step[] = [];
@@ -51,11 +55,18 @@ export async function POST(request: Request): Promise<Response> {
       const r = onboard(state, action.risk, vaultFxrp);
       state = r.state;
       steps = r.steps;
+      if (enclave) {
+        steps.push({
+          label: "Enclave is live",
+          detail: `Connected to the real enclave at the VPS. Key loaded: ${enclave.hasKey}, policy set: ${enclave.hasPolicy}, ${enclave.actionsSigned} actions signed, ${enclave.actionsRefused} refused so far.`,
+          ok: enclave.hasKey && enclave.hasPolicy,
+        });
+      }
       reply = `Done. Your ${vaultFxrp.toLocaleString()} FXRP is working in your allowlisted venue, all inside the sealed enclave and released only after MindorrVault verified the enclave signature on-chain. I never held your keys, and your positions aren't public. Say "status" any time, or "withdraw" to pull out.`;
       break;
     }
     case "status": {
-      reply = statusText(state, price);
+      reply = statusText(state, price, enclave);
       break;
     }
     case "rebalance": {
@@ -89,5 +100,5 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
-  return Response.json({ reply, steps, state, price });
+  return Response.json({ reply, steps, state, price, enclave });
 }

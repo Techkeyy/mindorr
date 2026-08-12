@@ -10,15 +10,15 @@ const RPC = "https://coston2-api.flare.network/ext/C/rpc";
 const FTSO_TEST_XRP = "0x22d10E7305Fd39833B4d14d113Bca3602bA1F701" as const;
 
 export const TEE_MANAGER = "0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE" as const;
-// Current registration (extension 66157). The TEE machine key is re-attested each
-// time the enclave restarts; update this to the latest registered id before a demo.
-// The immutable proof of the real fund movement lives on /verify (execute/mint txs).
-export const TEE_ID = "0xD876437F023e5681d151845C326270327968F2ff" as const;
-export const EXTENSION_ID = 66157n;
+// Current registration (VPS at 103.195.188.198, extension 66167). The TEE machine
+// key is re-attested each time the enclave restarts; update this to the latest
+// registered id before a demo.
+export const TEE_ID = "0xAebD795867bCE28a7585C260eb380976f68CDA09" as const;
+export const EXTENSION_ID = 66167n;
 
 // --- Real deployed Mindorr addresses (Coston2) ------------------------------
 export const MINDORR_VAULT = "0x64CA30780Cf7ecA918C667bebbabB5F833Ee58fc" as const;
-export const INSTRUCTION_SENDER = "0xf2170a0EBD84Bdf18F1b973A67d95F590F7Cc0f4" as const;
+export const INSTRUCTION_SENDER = "0x0Ddc1793782C3Fd439635bF64d2757b4cB021914" as const;
 export const MANAGED_WALLET = "0x71562b71999873DB5b286dF957af199Ec94617F7" as const; // enclave signer
 export const OWNER_ADDRESS = "0x16Cbdc4974754F915aDd3Fb7240A7eF9699c8700" as const; // return address
 export const ALLOWED_VENUE = "0xa11a000100000000000000000000000000000000" as const; // allowlisted destination
