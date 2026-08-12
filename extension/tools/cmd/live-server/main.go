@@ -300,15 +300,23 @@ func respondAction(w http.ResponseWriter, id common.Hash, tx string) {
 
 // --- polling ----------------------------------------------------------------
 
-// poll waits for the enclave result of an instruction. Returns (status, data, log).
+// poll waits for the enclave result of an instruction. Retries up to 10 times
+// (60s total) because the enclave can lag behind the chain.
 func poll(id common.Hash) (int, json.RawMessage, string, error) {
-	time.Sleep(6 * time.Second)
-	resp, err := fccutils.ActionResult(proxyURL, id)
-	if err != nil {
-		return 0, nil, "", err
+	for attempt := 0; attempt < 10; attempt++ {
+		time.Sleep(6 * time.Second)
+		resp, err := fccutils.ActionResult(proxyURL, id)
+		if err != nil {
+			if attempt < 9 && strings.Contains(err.Error(), "404") {
+				log.Printf("poll attempt %d/10 for %s: not ready yet, retrying...", attempt+1, id.Hex())
+				continue
+			}
+			return 0, nil, "", err
+		}
+		res := resp.Result
+		return int(res.Status), json.RawMessage(res.Data), res.Log, nil
 	}
-	res := resp.Result
-	return int(res.Status), json.RawMessage(res.Data), res.Log, nil
+	return 0, nil, "", fmt.Errorf("instruction %s not processed after 60s", id.Hex())
 }
 
 // deriveWalletAddress computes a user's managed wallet address the SAME way the

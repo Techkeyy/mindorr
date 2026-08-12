@@ -62,10 +62,14 @@ nohup "$PROJECT_DIR/live-server" \
     -listen "$LISTEN" \
     > "$PROJECT_DIR/live-server.log" 2>&1 &
 
-sleep 8
-if curl -sf -o /dev/null "http://localhost${LISTEN}/health"; then
-    log "live-server is UP (health 200). Logs: $PROJECT_DIR/live-server.log"
-    curl -s "http://localhost${LISTEN}/health"; echo
-else
-    die "live-server did not become healthy. Check $PROJECT_DIR/live-server.log"
-fi
+log "waiting for seed delivery (enclave may need up to 60s)..."
+for i in $(seq 1 12); do
+    sleep 10
+    if curl -sf -o /dev/null "http://localhost${LISTEN}/health" 2>/dev/null; then
+        log "live-server is UP (health 200). Logs: $PROJECT_DIR/live-server.log"
+        curl -s "http://localhost${LISTEN}/health"; echo
+        exit 0
+    fi
+    log "attempt $i/12: not ready yet..."
+done
+die "live-server did not become healthy after 120s. Check $PROJECT_DIR/live-server.log"
