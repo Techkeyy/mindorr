@@ -20,9 +20,14 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 log() { echo -e "${GREEN}[live-server]${NC} $*"; }
 die() { echo -e "${RED}[live-server] ERROR:${NC} $*" >&2; exit 1; }
 
+# A pre-set INSTRUCTION_SENDER (env) wins over the one in config/extension.env, so
+# you can point the live-server at the extension the enclave actually serves.
+PRESET_SENDER="${INSTRUCTION_SENDER:-}"
+
 # Load .env (DEPLOYMENT_PRIVATE_KEY, CHAIN_URL) and the generated extension config.
 if [[ -f "$PROJECT_DIR/.env" ]]; then set -a; source "$PROJECT_DIR/.env"; set +a; fi
 [[ -f "$PROJECT_DIR/config/extension.env" ]] && source "$PROJECT_DIR/config/extension.env"
+[[ -n "$PRESET_SENDER" ]] && INSTRUCTION_SENDER="$PRESET_SENDER"
 
 EXT_PROXY_URL="${EXT_PROXY_URL:-http://localhost:6674}"
 CHAIN_URL="${CHAIN_URL:-https://coston2-api.flare.network/ext/C/rpc}"

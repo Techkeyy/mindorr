@@ -105,9 +105,8 @@ export async function POST(request: Request): Promise<Response> {
       steps = [
         {
           label: "Created your private wallet, in the enclave",
-          detail: `The TEE derived a signing key unique to you and revealed only its address ${short(r.walletAddress)}. The key was born inside the enclave and never leaves it.`,
+          detail: `The TEE derived a signing key unique to you and revealed only its address ${short(r.walletAddress)}. The key was born inside the enclave from your address and never leaves it.`,
           ok: true,
-          link: txLink(r.createTx),
         },
         {
           label: "Set your policy",

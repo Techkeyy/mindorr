@@ -29,7 +29,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math/big"
 	"net/http"
 	"os"
 	"strings"
@@ -166,24 +165,12 @@ func handleOnboard(w http.ResponseWriter, r *http.Request) {
 	}
 	risk := normalizeRisk(req.RiskLevel)
 
-	// 1) Derive + reveal the user's in-enclave wallet.
-	createPayload, _ := json.Marshal(map[string]string{"user": req.User})
-	sendMu.Lock()
-	cid, createTx, err := instrutils.SendCreate(srv, senderAddr, createPayload)
-	sendMu.Unlock()
+	// 1) Derive the user's in-enclave wallet address locally (matches the enclave).
+	walletAddress, err := deriveWalletAddress(req.User)
 	if err != nil {
-		writeErr(w, 502, "create send failed: "+err.Error())
+		writeErr(w, 500, "derive failed: "+err.Error())
 		return
 	}
-	status, data, logLine, err := poll(cid)
-	if err != nil || status != 1 {
-		writeErr(w, 502, "create failed: "+firstNonEmpty(logLine, errStr(err)))
-		return
-	}
-	var created struct {
-		WalletAddress string `json:"walletAddress"`
-	}
-	_ = json.Unmarshal(data, &created)
 
 	// 2) Set the user's policy (return address = their own address).
 	policy := map[string]any{
@@ -213,10 +200,9 @@ func handleOnboard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"ok":            true,
 		"user":          req.User,
-		"walletAddress": created.WalletAddress,
+		"walletAddress": walletAddress,
 		"riskLevel":     risk,
 		"venue":         defaultVenue,
-		"createTx":      createTx.Hex(),
 		"policyTx":      policyTx.Hex(),
 	})
 }
@@ -322,7 +308,25 @@ func poll(id common.Hash) (int, json.RawMessage, string, error) {
 		return 0, nil, "", err
 	}
 	res := resp.Result
-	return int(res.Status), res.Data, res.Log, nil
+	return int(res.Status), json.RawMessage(res.Data), res.Log, nil
+}
+
+// deriveWalletAddress computes a user's managed wallet address the SAME way the
+// enclave does (keccak256(seed ‖ userBytes) as the secp256k1 key), so the app can
+// show it without an on-chain round-trip. The enclave derives the same key when it
+// signs, so the addresses always match.
+func deriveWalletAddress(user string) (string, error) {
+	seed, err := hex.DecodeString(masterSeedHex)
+	if err != nil {
+		return "", err
+	}
+	userBytes := common.HexToAddress(user).Bytes() // 20 bytes
+	material := append(append([]byte{}, seed...), userBytes...)
+	key, err := crypto.ToECDSA(crypto.Keccak256(material))
+	if err != nil {
+		return "", err
+	}
+	return crypto.PubkeyToAddress(key.PublicKey).Hex(), nil
 }
 
 // --- helpers ----------------------------------------------------------------

@@ -37,7 +37,6 @@ export interface OnboardResult {
   walletAddress: string;
   riskLevel: string;
   venue: string;
-  createTx: string;
   policyTx: string;
 }
 
