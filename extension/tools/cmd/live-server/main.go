@@ -20,6 +20,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -315,13 +316,46 @@ func respondAction(w http.ResponseWriter, id common.Hash) {
 
 // --- polling -----------------------------------------------------------------
 
+var errResultNotReady = errors.New("action result not ready")
+
+// fetchSubmitResult fetches the result of a direct action. Direct actions use
+// the "submit" submission tag. The proxy's result endpoint defaults to
+// "threshold", which belongs to the on-chain instruction path and returns 404
+// for direct actions unless the tag is supplied explicitly.
+func fetchSubmitResult(id common.Hash) (*types.ActionResponse, error) {
+	client := http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(proxyURL + "/action/result/" + id.Hex() + "?submissionTag=submit")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, errResultNotReady
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("action result returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result types.ActionResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("decode action result: %w", err)
+	}
+	return &result, nil
+}
+
 func poll(id common.Hash) (int, json.RawMessage, string, error) {
-	for attempt := 0; attempt < 10; attempt++ {
-		time.Sleep(6 * time.Second)
-		resp, err := fccutils.ActionResult(proxyURL, id)
+	for attempt := 0; attempt < 60; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Second)
+		}
+		resp, err := fetchSubmitResult(id)
 		if err != nil {
-			if attempt < 9 && strings.Contains(err.Error(), "404") {
-				log.Printf("poll attempt %d/10 for %s: not ready yet, retrying...", attempt+1, id.Hex())
+			if errors.Is(err, errResultNotReady) {
 				continue
 			}
 			return 0, nil, "", err
@@ -329,7 +363,7 @@ func poll(id common.Hash) (int, json.RawMessage, string, error) {
 		res := resp.Result
 		return int(res.Status), json.RawMessage(res.Data), res.Log, nil
 	}
-	return 0, nil, "", fmt.Errorf("instruction %s not processed after 60s", id.Hex())
+	return 0, nil, "", fmt.Errorf("direct action %s not processed after 60s", id.Hex())
 }
 
 func deriveWalletAddress(user string) (string, error) {
